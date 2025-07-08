@@ -1,7 +1,0 @@
-# FR24 Monitor Configuration File
-# Auto-generated on 09/07/2025 00:24:46
-# This file caches the detected endpoint to avoid re-detection on every run
-
-FR24_ENDPOINT="http://localhost:8754/monitor.json"
-FR24_SERVICE_NAME="fr24feed"
-DETECTION_DATE="09/07/2025 00:24:46"

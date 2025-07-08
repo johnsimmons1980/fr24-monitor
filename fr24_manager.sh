@@ -604,10 +604,19 @@ mimetype.assign = (
     ".txt"  => "text/plain"
 )
 
-# PHP FastCGI configuration using PHP-FPM
+# PHP FastCGI configuration using CGI (more compatible)
 fastcgi.server = ( ".php" => ((
-    "socket" => "/run/php/php8.3-fpm.sock",
-    "broken-scriptfilename" => "enable"
+    "bin-path" => "/usr/bin/php-cgi",
+    "socket" => "/tmp/php.socket.fr24",
+    "max-procs" => 2,
+    "idle-timeout" => 20,
+    "bin-environment" => (
+        "PHP_FCGI_CHILDREN" => "4",
+        "PHP_FCGI_MAX_REQUESTS" => "10000"
+    ),
+    "bin-copy-environment" => (
+        "PATH", "SHELL", "USER"
+    )
 )))
 EOF
 
