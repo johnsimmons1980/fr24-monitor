@@ -35,19 +35,24 @@ Usage: $0 [OPTIONS]
 Monitor FR24 server aircraft tracking status and reboot if tracking drops to 0.
 
 OPTIONS:
-    --endpoint URL      FR24 monitoring endpoint (default: $DEFAULT_ENDPOINT)
-    --dry-run          Run in dry-run mode (don't actually reboot)
-    --verbose          Enable verbose output
-    --log-file FILE    Log file path (default: $LOG_FILE)
-    --min-uptime HOURS Minimum uptime hours before allowing reboot (default: $MINIMUM_UPTIME_HOURS)
-    --threshold NUM    Reboot threshold - reboot if tracked <= NUM (default: $TRACKED_THRESHOLD)
-    --max-log-size MB  Maximum log file size in MB before rotation (default: $MAX_LOG_SIZE_MB)
-    --max-log-files N  Maximum number of rotated log files to keep (default: $MAX_LOG_FILES)
-    --service-name NAME FR24 service name to restart if endpoint fails (default: fr24feed)
-    --help             Show this help message
+    --endpoint URL|PORT|auto  FR24 monitoring endpoint. Can be:
+                              - Full URL: http://localhost:8754/monitor.json
+                              - Port number: 8754 (will build URL automatically) 
+                              - 'auto' to auto-detect port (default behavior)
+                              - IP/hostname: 192.168.1.100 (will add :8754/monitor.json)
+                              (default: auto-detect or $DEFAULT_ENDPOINT)
+    --dry-run                Run in dry-run mode (don't actually reboot)
+    --verbose                Enable verbose output
+    --log-file FILE          Log file path (default: $LOG_FILE)
+    --min-uptime HOURS       Minimum uptime hours before allowing reboot (default: $MINIMUM_UPTIME_HOURS)
+    --threshold NUM          Reboot threshold - reboot if tracked <= NUM (default: $TRACKED_THRESHOLD)
+    --max-log-size MB        Maximum log file size in MB before rotation (default: $MAX_LOG_SIZE_MB)
+    --max-log-files N        Maximum number of rotated log files to keep (default: $MAX_LOG_FILES)
+    --service-name NAME      FR24 service name to restart if endpoint fails (default: fr24feed)
+    --help                   Show this help message
 
 CONFIGURATION:
-    Default endpoint: $DEFAULT_ENDPOINT
+    Default endpoint: auto-detect or $DEFAULT_ENDPOINT
     Default log file: $LOG_FILE
     Default reboot threshold: tracked <= $TRACKED_THRESHOLD
     Default minimum uptime: $MINIMUM_UPTIME_HOURS hours
@@ -56,14 +61,17 @@ CONFIGURATION:
     Default service name: $FR24_SERVICE_NAME
 
 Examples:
-    $0 --dry-run                           # Test mode with default endpoint
-    $0 --endpoint http://192.168.1.100:8754/monitor.json --dry-run
-    $0 --verbose                           # Production mode with verbose output
-    $0 --min-uptime 4 --dry-run           # Test with 4-hour minimum uptime
-    $0 --threshold 50 --dry-run           # Test reboot logic when tracked <= 50
-    $0 --threshold 200 --dry-run --verbose # Test with high threshold to trigger reboot
-    $0 --max-log-size 5 --max-log-files 3 # Rotate logs at 5MB, keep 3 files
-    $0 --service-name fr24feed --dry-run  # Specify custom service name
+    $0 --dry-run                                    # Auto-detect port and test
+    $0 --endpoint auto --dry-run                    # Explicitly auto-detect port
+    $0 --endpoint 8754 --dry-run                    # Use specific port
+    $0 --endpoint http://192.168.1.100:8754/monitor.json --dry-run  # Full URL
+    $0 --endpoint 192.168.1.100 --dry-run          # Remote host (will use port 8754)
+    $0 --verbose                                    # Production mode with verbose output
+    $0 --min-uptime 4 --dry-run                    # Test with 4-hour minimum uptime
+    $0 --threshold 50 --dry-run                    # Test reboot logic when tracked <= 50
+    $0 --threshold 200 --dry-run --verbose         # Test with high threshold to trigger reboot
+    $0 --max-log-size 5 --max-log-files 3          # Rotate logs at 5MB, keep 3 files
+    $0 --service-name piaware --endpoint auto --dry-run  # Auto-detect for PiAware feeder
 
 EOF
 }
@@ -343,6 +351,172 @@ reboot_server() {
     sudo reboot
 }
 
+# Function to detect FR24 feeder port dynamically
+detect_fr24_port() {
+    local detected_port=""
+    local service_name="$1"
+    
+    log_message "INFO" "Attempting to detect FR24 feeder port..." >&2
+    
+    # Method 1: Check if fr24feed process is running and extract port from command line
+    if command -v pgrep >/dev/null 2>&1; then
+        local fr24_pids=$(pgrep -f "$service_name" 2>/dev/null || true)
+        if [[ -n "$fr24_pids" ]]; then
+            log_message "INFO" "Found $service_name process(es): $fr24_pids" >&2
+            
+            # Check command line arguments for port configuration
+            for pid in $fr24_pids; do
+                if [[ -r "/proc/$pid/cmdline" ]]; then
+                    local cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                    log_message "INFO" "Process $pid cmdline: $cmdline" >&2
+                    
+                    # Look for port parameters in various formats
+                    if [[ "$cmdline" =~ --http-port[[:space:]]*[=[:space:]]*([0-9]+) ]]; then
+                        detected_port="${BASH_REMATCH[1]}"
+                        log_message "INFO" "Found port from --http-port parameter: $detected_port" >&2
+                        break
+                    elif [[ "$cmdline" =~ -p[[:space:]]*([0-9]+) ]]; then
+                        detected_port="${BASH_REMATCH[1]}"
+                        log_message "INFO" "Found port from -p parameter: $detected_port" >&2
+                        break
+                    fi
+                fi
+            done
+        fi
+    fi
+    
+    # Method 2: Check netstat/ss for listening ports by the service
+    if [[ -z "$detected_port" ]] && command -v ss >/dev/null 2>&1; then
+        log_message "INFO" "Checking listening ports with ss command..." >&2
+        local listening_ports=$(ss -tulpn 2>/dev/null | grep "$service_name" | grep -o ':[0-9]*' | sed 's/://' | sort -u || true)
+        if [[ -n "$listening_ports" ]]; then
+            # Look for web ports (typically 8000-9999 range for web interfaces)
+            for port in $listening_ports; do
+                if [[ "$port" -ge 8000 ]] && [[ "$port" -le 9999 ]]; then
+                    detected_port="$port"
+                    log_message "INFO" "Found web service port from ss: $detected_port" >&2
+                    break
+                fi
+            done
+            
+            # If no web port found, take the first listening port
+            if [[ -z "$detected_port" ]]; then
+                detected_port=$(echo "$listening_ports" | head -1)
+                log_message "INFO" "Using first listening port from ss: $detected_port" >&2
+            fi
+        fi
+    fi
+    
+    # Method 3: Check common FR24 ports by testing HTTP connectivity
+    if [[ -z "$detected_port" ]]; then
+        log_message "INFO" "Testing common FR24 ports..." >&2
+        local common_ports=(8754 8080 8088 9000 9090)
+        
+        for port in "${common_ports[@]}"; do
+            log_message "INFO" "Testing port $port..." >&2
+            if curl -s --connect-timeout 2 --max-time 5 "http://localhost:$port/monitor.json" >/dev/null 2>&1; then
+                detected_port="$port"
+                log_message "INFO" "Found responsive FR24 endpoint on port: $detected_port" >&2
+                break
+            elif curl -s --connect-timeout 2 --max-time 5 "http://localhost:$port/" >/dev/null 2>&1; then
+                # Check if it responds to root path (might be FR24 web interface)
+                detected_port="$port"
+                log_message "INFO" "Found responsive web service on port: $detected_port (assuming FR24)" >&2
+                break
+            fi
+        done
+    fi
+    
+    # Method 4: Check systemd service configuration if available
+    if [[ -z "$detected_port" ]] && command -v systemctl >/dev/null 2>&1; then
+        log_message "INFO" "Checking systemd service configuration..." >&2
+        local service_status=$(systemctl show "$service_name" --property=ExecStart 2>/dev/null || true)
+        if [[ -n "$service_status" ]]; then
+            log_message "INFO" "Service ExecStart: $service_status" >&2
+            if [[ "$service_status" =~ --http-port[[:space:]]*[=[:space:]]*([0-9]+) ]]; then
+                detected_port="${BASH_REMATCH[1]}"
+                log_message "INFO" "Found port from systemd service config: $detected_port" >&2
+            fi
+        fi
+    fi
+    
+    # Method 5: Check configuration files in common locations
+    if [[ -z "$detected_port" ]]; then
+        log_message "INFO" "Checking configuration files..." >&2
+        local config_paths=(
+            "/etc/fr24feed.ini"
+            "/etc/fr24feed/fr24feed.ini"
+            "/usr/local/etc/fr24feed.ini"
+            "/opt/fr24feed/fr24feed.ini"
+            "$HOME/.fr24feed.ini"
+        )
+        
+        for config_file in "${config_paths[@]}"; do
+            if [[ -r "$config_file" ]]; then
+                log_message "INFO" "Checking config file: $config_file" >&2
+                local port_line=$(grep -i "http.*port" "$config_file" 2>/dev/null | head -1 || true)
+                if [[ -n "$port_line" ]]; then
+                    # Extract port number from various config formats
+                    if [[ "$port_line" =~ [^0-9]([0-9]{4,5})[^0-9] ]]; then
+                        detected_port="${BASH_REMATCH[1]}"
+                        log_message "INFO" "Found port in config file $config_file: $detected_port" >&2
+                        break
+                    fi
+                fi
+            fi
+        done
+    fi
+    
+    if [[ -n "$detected_port" ]]; then
+        echo "$detected_port"
+        return 0
+    else
+        log_message "WARN" "Could not detect FR24 feeder port, using default: 8754" >&2
+        echo "8754"
+        return 1
+    fi
+}
+
+# Function to build endpoint URL with auto-detected port
+build_endpoint_url() {
+    local provided_endpoint="$1"
+    local service_name="$2"
+    
+    # If user provided a full URL, use it as-is
+    if [[ "$provided_endpoint" =~ ^https?:// ]]; then
+        echo "$provided_endpoint"
+        return 0
+    fi
+    
+    # If user provided just a port number, build URL with it
+    if [[ "$provided_endpoint" =~ ^[0-9]+$ ]]; then
+        echo "http://localhost:$provided_endpoint/monitor.json"
+        return 0
+    fi
+    
+    # If user provided 'auto' or default endpoint, try to detect port
+    if [[ "$provided_endpoint" == "auto" ]] || [[ "$provided_endpoint" == "$DEFAULT_ENDPOINT" ]]; then
+        local detected_port=$(detect_fr24_port "$service_name")
+        local final_url="http://localhost:$detected_port/monitor.json"
+        
+        log_message "INFO" "Auto-detected FR24 endpoint: $final_url" >&2
+        
+        # Verify the detected endpoint works
+        if curl -s --connect-timeout 5 --max-time 10 "$final_url" >/dev/null 2>&1; then
+            log_message "SUCCESS" "Verified auto-detected endpoint is responsive: $final_url" >&2
+        else
+            log_message "WARN" "Auto-detected endpoint not responsive, you may need to specify --endpoint manually" >&2
+        fi
+        
+        echo "$final_url"
+        return 0
+    fi
+    
+    # Fallback: treat as hostname or IP
+    echo "http://$provided_endpoint/monitor.json"
+    return 0
+}
+
 # Main monitoring function
 monitor_fr24() {
     local endpoint="$1"
@@ -389,7 +563,7 @@ monitor_fr24() {
 }
 
 # Parse command line arguments
-ENDPOINT="$DEFAULT_ENDPOINT"
+ENDPOINT="auto"  # Changed to auto-detect by default
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -441,9 +615,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Build the final endpoint URL with auto-detection if needed
+FINAL_ENDPOINT=$(build_endpoint_url "$ENDPOINT" "$FR24_SERVICE_NAME")
+
 # Validate endpoint URL
-if [[ ! "$ENDPOINT" =~ ^https?:// ]]; then
-    log_message "ERROR" "Invalid endpoint URL: $ENDPOINT"
+if [[ ! "$FINAL_ENDPOINT" =~ ^https?:// ]]; then
+    log_message "ERROR" "Invalid endpoint URL: $FINAL_ENDPOINT"
     log_message "ERROR" "URL must start with http:// or https://"
     exit 1
 fi
@@ -486,7 +663,7 @@ main() {
     fi
     
     # Run monitoring
-    monitor_fr24 "$ENDPOINT"
+    monitor_fr24 "$FINAL_ENDPOINT"
     
     # Cleanup temporary files
     rm -f "$HOME/.fr24_log_rotated_$$" 2>/dev/null || true
