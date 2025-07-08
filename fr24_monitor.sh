@@ -596,9 +596,10 @@ monitor_fr24() {
         log_message "INFO" "Current system uptime: $current_uptime hours"
     fi
     
-    # Log system status to database periodically (only if not dry run)
+    # Log monitoring result to database periodically (only if not dry run)
     if [[ "$DRY_RUN" == "false" ]]; then
-        log_system_status "$current_uptime"
+        # We'll log the result after we know if it's successful or not
+        local temp_log_status="UNKNOWN"
     fi
     
     # Get current stats
