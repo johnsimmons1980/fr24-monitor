@@ -554,7 +554,7 @@ install_webserver() {
     if command -v apt-get &> /dev/null; then
         print_status "INFO" "Installing lighttpd and PHP via apt-get..."
         sudo apt-get update
-        sudo apt-get install -y lighttpd php-cli php-fpm php-sqlite3
+        sudo apt-get install -y lighttpd php-cli php-cgi php-sqlite3
     elif command -v yum &> /dev/null; then
         print_status "INFO" "Installing lighttpd and PHP via yum..."
         sudo yum install -y lighttpd php php-pdo
@@ -569,6 +569,40 @@ install_webserver() {
     # Create lighttpd configuration
     print_status "INFO" "Creating lighttpd configuration..."
     
+    # Detect available PHP method
+    local php_config=""
+    if command -v php-cgi >/dev/null 2>&1; then
+        print_status "INFO" "Using PHP-CGI for FastCGI"
+        php_config='# PHP FastCGI configuration using CGI
+fastcgi.server = ( ".php" => ((
+    "bin-path" => "/usr/bin/php-cgi",
+    "socket" => "/tmp/php.socket.fr24",
+    "max-procs" => 2,
+    "idle-timeout" => 20,
+    "bin-environment" => (
+        "PHP_FCGI_CHILDREN" => "4",
+        "PHP_FCGI_MAX_REQUESTS" => "10000"
+    ),
+    "bin-copy-environment" => (
+        "PATH", "SHELL", "USER"
+    )
+)))'
+    elif [[ -S "/run/php/php8.2-fpm.sock" ]] || [[ -S "/run/php/php-fpm.sock" ]]; then
+        local php_socket="/run/php/php8.2-fpm.sock"
+        if [[ ! -S "$php_socket" ]]; then
+            php_socket="/run/php/php-fpm.sock"
+        fi
+        print_status "INFO" "Using PHP-FPM socket: $php_socket"
+        php_config="# PHP FastCGI configuration using PHP-FPM
+fastcgi.server = ( \".php\" => ((
+    \"socket\" => \"$php_socket\",
+    \"broken-scriptfilename\" => \"enable\"
+)))"
+    else
+        print_status "ERROR" "No PHP FastCGI support found. Install php-cgi with: sudo apt-get install php-cgi"
+        return 1
+    fi
+
     cat > "$LIGHTTPD_CONFIG" << EOF
 server.modules = (
     "mod_access",
@@ -604,49 +638,8 @@ mimetype.assign = (
     ".txt"  => "text/plain"
 )
 
-    # Detect available PHP method and create appropriate configuration
-    local php_config=""
-    
-    if command -v php-cgi >/dev/null 2>&1; then
-        print_status "INFO" "Using PHP-CGI for FastCGI"
-        php_config='
-# PHP FastCGI configuration using CGI
-fastcgi.server = ( ".php" => ((
-    "bin-path" => "/usr/bin/php-cgi",
-    "socket" => "/tmp/php.socket.fr24",
-    "max-procs" => 2,
-    "idle-timeout" => 20,
-    "bin-environment" => (
-        "PHP_FCGI_CHILDREN" => "4",
-        "PHP_FCGI_MAX_REQUESTS" => "10000"
-    ),
-    "bin-copy-environment" => (
-        "PATH", "SHELL", "USER"
-    )
-)))'
-    elif [[ -S "/run/php/php8.2-fpm.sock" ]] || [[ -S "/run/php/php-fpm.sock" ]]; then
-        local php_socket="/run/php/php8.2-fpm.sock"
-        if [[ ! -S "$php_socket" ]]; then
-            php_socket="/run/php/php-fpm.sock"
-        fi
-        print_status "INFO" "Using PHP-FPM socket: $php_socket"
-        php_config="
-# PHP FastCGI configuration using PHP-FPM
-fastcgi.server = ( \".php\" => ((
-    \"socket\" => \"$php_socket\",
-    \"broken-scriptfilename\" => \"enable\"
-)))"
-    else
-        print_status "WARN" "No suitable PHP FastCGI method found"
-        print_status "INFO" "Install php-cgi with: sudo apt-get install php-cgi"
-        php_config='
-# PHP FastCGI configuration - DISABLED (no php-cgi found)
-# Install php-cgi with: sudo apt-get install php-cgi
-# fastcgi.server = ( ".php" => (( "disabled" => "true" )))'
-    fi
-
-    # Add PHP configuration to the lighttpd config
-    echo "$php_config" >> "$LIGHTTPD_CONFIG"
+$php_config
+EOF
 
     if [[ $? -eq 0 ]]; then
         print_status "SUCCESS" "Web server configuration created"
