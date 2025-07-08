@@ -6,6 +6,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRON_FILE="$SCRIPT_DIR/fr24_monitor.cron"
 MONITOR_SCRIPT="$SCRIPT_DIR/fr24_monitor.sh"
+LOGROTATE_FILE="$SCRIPT_DIR/fr24_logrotate.conf"
+LOGROTATE_DEST="/etc/logrotate.d/fr24_monitor"
 
 # Colors for output
 RED='\033[0;31m'
@@ -128,6 +130,14 @@ install_cron() {
         print_status "SUCCESS" "FR24 monitor crontab installed successfully"
         print_status "INFO" "The monitor will run every 10 minutes"
         print_status "INFO" "Check logs at: $log_file"
+        
+        # Also install logrotate configuration
+        print_status "INFO" "Installing logrotate configuration..."
+        if install_logrotate; then
+            print_status "SUCCESS" "Complete installation finished successfully"
+        else
+            print_status "WARN" "Cron installed but logrotate installation failed"
+        fi
     else
         print_status "ERROR" "Failed to install crontab"
         return 1
@@ -153,6 +163,14 @@ uninstall_cron() {
     
     if [[ $? -eq 0 ]]; then
         print_status "SUCCESS" "FR24 monitor removed from crontab"
+        
+        # Also remove logrotate configuration
+        print_status "INFO" "Removing logrotate configuration..."
+        if uninstall_logrotate; then
+            print_status "SUCCESS" "Complete uninstallation finished successfully"
+        else
+            print_status "WARN" "Cron removed but logrotate removal failed"
+        fi
     else
         print_status "ERROR" "Failed to remove FR24 monitor from crontab"
         return 1
@@ -198,6 +216,19 @@ show_status() {
     else
         print_status "WARN" "Log file does not exist yet"
     fi
+    
+    echo
+    print_status "INFO" "Logrotate configuration status:"
+    if [[ -f "$LOGROTATE_DEST" ]]; then
+        print_status "SUCCESS" "Logrotate configuration installed at: $LOGROTATE_DEST"
+        if sudo logrotate -d "$LOGROTATE_DEST" >/dev/null 2>&1; then
+            print_status "SUCCESS" "Logrotate configuration is valid"
+        else
+            print_status "WARN" "Logrotate configuration has issues"
+        fi
+    else
+        print_status "WARN" "Logrotate configuration not installed"
+    fi
 }
 
 # Function to edit crontab
@@ -231,6 +262,20 @@ preview_cron() {
     echo "================================"
     print_status "INFO" "Monitor script: $MONITOR_SCRIPT"
     print_status "INFO" "Log file: $log_file"
+    
+    echo
+    echo "================================"
+    echo "Logrotate configuration that would be installed:"
+    echo "================================"
+    
+    if [[ -f "$LOGROTATE_FILE" ]]; then
+        # Show the processed logrotate configuration
+        sed "s|__LOG_FILE_PATH__|$log_file|g" "$LOGROTATE_FILE"
+        echo "================================"
+        print_status "INFO" "Logrotate destination: $LOGROTATE_DEST"
+    else
+        print_status "WARN" "Logrotate file not found: $LOGROTATE_FILE"
+    fi
 }
 
 # Function to test the monitor script
@@ -252,6 +297,60 @@ test_monitor() {
     fi
 }
 
+# Function to install logrotate configuration
+install_logrotate() {
+    if [[ ! -f "$LOGROTATE_FILE" ]]; then
+        print_status "WARN" "Logrotate file not found: $LOGROTATE_FILE"
+        return 1
+    fi
+    
+    # Check if we can write to /etc/logrotate.d/
+    if [[ ! -w "/etc/logrotate.d/" ]]; then
+        print_status "WARN" "Cannot write to /etc/logrotate.d/ - need sudo privileges"
+        print_status "INFO" "Attempting to install logrotate config with sudo..."
+    fi
+    
+    local log_file=$(get_log_file_path)
+    local temp_logrotate=$(mktemp)
+    
+    # Process the logrotate file and replace placeholders
+    sed "s|__LOG_FILE_PATH__|$log_file|g" "$LOGROTATE_FILE" > "$temp_logrotate"
+    
+    # Install the logrotate configuration
+    if sudo cp "$temp_logrotate" "$LOGROTATE_DEST"; then
+        print_status "SUCCESS" "Logrotate configuration installed to $LOGROTATE_DEST"
+        
+        # Test the logrotate configuration
+        if sudo logrotate -d "$LOGROTATE_DEST" >/dev/null 2>&1; then
+            print_status "SUCCESS" "Logrotate configuration is valid"
+        else
+            print_status "WARN" "Logrotate configuration may have issues - check with: sudo logrotate -d $LOGROTATE_DEST"
+        fi
+    else
+        print_status "ERROR" "Failed to install logrotate configuration"
+        rm -f "$temp_logrotate"
+        return 1
+    fi
+    
+    rm -f "$temp_logrotate"
+    return 0
+}
+
+# Function to uninstall logrotate configuration
+uninstall_logrotate() {
+    if [[ -f "$LOGROTATE_DEST" ]]; then
+        if sudo rm -f "$LOGROTATE_DEST"; then
+            print_status "SUCCESS" "Removed logrotate configuration: $LOGROTATE_DEST"
+        else
+            print_status "ERROR" "Failed to remove logrotate configuration: $LOGROTATE_DEST"
+            return 1
+        fi
+    else
+        print_status "INFO" "Logrotate configuration not found: $LOGROTATE_DEST"
+    fi
+    return 0
+}
+
 # Main function
 main() {
     local action="${1:-help}"
@@ -259,9 +358,11 @@ main() {
     case "$action" in
         "install")
             install_cron
+            install_logrotate
             ;;
         "uninstall")
             uninstall_cron
+            uninstall_logrotate
             ;;
         "status")
             show_status
@@ -278,30 +379,35 @@ main() {
         "help"|*)
             local log_file=$(get_log_file_path)
             cat << EOF
-FR24 Monitor Crontab Management
+FR24 Monitor Installation & Management
 
 Usage: $0 [command]
 
 Commands:
-    install     Install FR24 monitor crontab (runs every 10 minutes)
-    uninstall   Remove FR24 monitor from crontab
-    status      Show current crontab status and log info
+    install     Install FR24 monitor crontab and logrotate configuration
+    uninstall   Remove FR24 monitor from crontab and remove logrotate config
+    status      Show current crontab status, log info, and logrotate status
     edit        Edit crontab manually
     test        Test the monitor script in dry-run mode
-    preview     Show the cron entries that would be installed
+    preview     Show the cron and logrotate entries that would be installed
     help        Show this help message
 
 Examples:
     $0 preview      # Preview what will be installed
-    $0 install      # Install the cron job
+    $0 install      # Install cron job and logrotate config
     $0 status       # Check if it's running
     $0 test         # Test the script
-    $0 uninstall    # Remove the cron job
+    $0 uninstall    # Remove cron job and logrotate config
 
 Files:
     Monitor script: $MONITOR_SCRIPT
     Cron template:  $CRON_FILE
+    Logrotate template: $LOGROTATE_FILE
     Log file:       $log_file
+
+Installation locations:
+    Cron entries: User's crontab
+    Logrotate config: $LOGROTATE_DEST
 
 EOF
             ;;
