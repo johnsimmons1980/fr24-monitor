@@ -1,6 +1,6 @@
-# FR24 Monitor - FlightRadar24 Feeder Monitoring and Auto-Restart
+# FR24 Monitor - FlightRadar24 Feeder Monitoring with Web Dashboard
 
-A robust monitoring system for FlightRadar24 feeders that automatically restarts services or reboots your system when aircraft tracking drops to critical levels.
+A comprehensive monitoring system for FlightRadar24 feeders that automatically restarts services or reboots your system when aircraft tracking drops to critical levels. Features a built-in web dashboard for real-time monitoring and historical analysis.
 
 ## 🚀 TL;DR - Quick Setup (5 minutes)
 
@@ -13,40 +13,62 @@ A robust monitoring system for FlightRadar24 feeders that automatically restarts
    cd fr24-monitor
    ```
 
-2. **Make sure you have the required tools:**
-   ```bash
-   sudo apt-get update
-   sudo apt-get install curl jq
-   ```
-
-3. **Test that it works:**
+2. **Install the complete monitoring system with web dashboard:**
    ```bash
    chmod +x fr24_manager.sh
-   ./fr24_manager.sh test
-   ```
-
-4. **Install the monitoring (runs every 10 minutes):**
-   ```bash
    ./fr24_manager.sh install
    ```
 
-5. **Check it's working:**
+3. **Check it's working:**
    ```bash
    ./fr24_manager.sh status
    ```
 
-**That's it!** Your FR24 feeder will now be monitored automatically. If aircraft tracking drops to 0, the system will:
-- Try to restart the FR24 service first
-- If that fails, reboot the server (but only if it's been running for 2+ hours)
+4. **View your monitoring dashboard:**
+   Open your web browser and go to: **http://localhost:6869**
+
+**That's it!** Your FR24 feeder will now be monitored automatically with:
+- ✈️ **Real-time monitoring** every 10 minutes
+- 🔄 **Automatic service restart** when issues are detected
+- 💻 **Web dashboard** showing current status and history
+- 📊 **Database logging** of all events and statistics
+- 🛡️ **Smart reboot protection** (only reboots if system has been running 2+ hours)
 
 Skip to the [Troubleshooting](#troubleshooting) section if you have issues.
 
 ---
 
+## 🎯 What Does This Do?
+
+This monitoring system provides comprehensive oversight of your FlightRadar24 feeder:
+
+### Core Monitoring
+- **Tracks aircraft count** from your FR24 feeder every 10 minutes
+- **Automatically detects** FR24 endpoint and port (no manual configuration needed)
+- **Restarts FR24 service** when endpoint becomes unresponsive
+- **Reboots system** when aircraft tracking drops to 0 (with safety checks)
+
+### Web Dashboard
+- **Real-time status display** showing current aircraft tracking
+- **Historical analytics** of reboot events and system performance
+- **Interactive charts** and statistics
+- **Detailed logs viewer** with both file and database logs
+- **Automatic refresh** every 60 seconds
+- **Mobile-friendly** responsive design
+
+### Smart Safety Features
+- **Minimum uptime protection** - won't reboot if system hasn't been running long enough
+- **Dry-run mode** for testing without actual reboots
+- **Comprehensive logging** to both files and database
+- **Automatic endpoint detection** with caching for performance
+- **Service restart attempts** before resorting to system reboot
+
+---
+
 ## 📋 Table of Contents
 
-- [What Does This Do?](#what-does-this-do)
 - [Features](#features)
+- [Web Dashboard](#web-dashboard)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration Options](#configuration-options)
@@ -381,6 +403,54 @@ journalctl -u cron -f
 2. **Test manually**: `./fr24_monitor.sh --dry-run --verbose`
 3. **Check status**: `./fr24_manager.sh status`
 4. **Validate setup**: `./fr24_manager.sh validate`
+
+---
+
+## 🌐 Web Dashboard
+
+The FR24 Monitor includes a comprehensive web dashboard accessible at **http://localhost:6869** that provides:
+
+### Real-time Monitoring
+- **Current aircraft tracking status** with visual indicators
+- **Live system metrics** including uptime and performance
+- **FR24 feed status** and server connection information
+- **Response time monitoring** for endpoint health
+
+### Historical Analytics
+- **Reboot event history** with timestamps and reasons
+- **Aircraft tracking trends** over time
+- **System performance graphs** and statistics
+- **Failure pattern analysis** to identify recurring issues
+
+### Dashboard Features
+- **Auto-refresh** every 60 seconds for real-time updates
+- **Mobile-responsive** design works on phones and tablets
+- **Clean, modern interface** with color-coded status indicators
+- **Detailed logs viewer** with searchable database entries
+- **Export capabilities** for data analysis
+
+### Database Integration
+All monitoring data is stored in a local SQLite database including:
+- **Monitoring statistics** (aircraft counts, response times, feed status)
+- **Reboot events** (timestamps, reasons, system state)
+- **System status** (uptime, memory, disk usage)
+
+The database can be accessed directly for custom analysis:
+```bash
+sqlite3 /path/to/fr24-monitor/fr24_monitor.db
+```
+
+### Web Server Management
+```bash
+# Start the dashboard
+./fr24_manager.sh start-web
+
+# Stop the dashboard  
+./fr24_manager.sh stop-web
+
+# Check dashboard status
+./fr24_manager.sh status
+```
 
 ---
 

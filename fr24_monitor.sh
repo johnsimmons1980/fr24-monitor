@@ -39,9 +39,9 @@ OPTIONS:
     --endpoint URL|PORT|auto  FR24 monitoring endpoint. Can be:
                               - Full URL: http://localhost:8754/monitor.json
                               - Port number: 8754 (will build URL automatically) 
-                              - 'auto' to auto-detect port (cached after first detection)
+                              - 'auto' to use standard FR24 port 8754 (cached after first success)
                               - IP/hostname: 192.168.1.100 (will add :8754/monitor.json)
-                              (default: auto-detect or $DEFAULT_ENDPOINT)
+                              (default: auto, uses port 8754)
     --dry-run                Run in dry-run mode (don't actually reboot)
     --verbose                Enable verbose output
     --log-file FILE          Log file path (default: $LOG_FILE)
@@ -65,25 +65,25 @@ CONFIGURATION:
     Default service name: $FR24_SERVICE_NAME
 
 Examples:
-    $0 --dry-run                                    # Auto-detect port and test (uses cache)
-    $0 --endpoint auto --dry-run                    # Explicitly auto-detect port
-    $0 --endpoint 8754 --dry-run                    # Use specific port
+    $0 --dry-run                                    # Use standard FR24 port and test (uses cache)
+    $0 --endpoint auto --dry-run                    # Explicitly use standard FR24 port
+    $0 --endpoint 8754 --dry-run                    # Use specific port (same as auto)
     $0 --endpoint http://192.168.1.100:8754/monitor.json --dry-run  # Full URL
     $0 --endpoint 192.168.1.100 --dry-run          # Remote host (will use port 8754)
-    $0 --clear-cache --dry-run                      # Clear cache and re-detect
+    $0 --clear-cache --dry-run                      # Clear cache and use standard port
     $0 --show-config                                # Show cached configuration
     $0 --verbose                                    # Production mode with verbose output
     $0 --min-uptime 4 --dry-run                    # Test with 4-hour minimum uptime
     $0 --threshold 50 --dry-run                    # Test reboot logic when tracked <= 50
     $0 --threshold 200 --dry-run --verbose         # Test with high threshold to trigger reboot
     $0 --max-log-size 5 --max-log-files 3          # Rotate logs at 5MB, keep 3 files
-    $0 --service-name piaware --endpoint auto --dry-run  # Auto-detect for PiAware feeder
+    $0 --service-name piaware --endpoint auto --dry-run  # Use standard port for PiAware feeder
 
 CACHE BEHAVIOR:
-    - First run with 'auto' will detect and cache the endpoint
+    - First run will test and cache the standard FR24 endpoint (http://localhost:8754/monitor.json)
     - Subsequent runs will use the cached endpoint (much faster)
-    - If cached endpoint becomes unresponsive, automatic re-detection occurs
-    - Use --clear-cache to force re-detection
+    - If cached endpoint becomes unresponsive, automatic fallback to standard port occurs
+    - Use --clear-cache to force re-testing of the standard endpoint
     - Use --show-config to view cached settings
 
 EOF
@@ -374,133 +374,7 @@ reboot_server() {
     sudo reboot
 }
 
-# Function to detect FR24 feeder port dynamically
-detect_fr24_port() {
-    local detected_port=""
-    local service_name="$1"
-    
-    log_message "INFO" "Attempting to detect FR24 feeder port..." >&2
-    
-    # Method 1: Check if fr24feed process is running and extract port from command line
-    if command -v pgrep >/dev/null 2>&1; then
-        local fr24_pids=$(pgrep -f "$service_name" 2>/dev/null || true)
-        if [[ -n "$fr24_pids" ]]; then
-            log_message "INFO" "Found $service_name process(es): $fr24_pids" >&2
-            
-            # Check command line arguments for port configuration
-            for pid in $fr24_pids; do
-                if [[ -r "/proc/$pid/cmdline" ]]; then
-                    local cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-                    log_message "INFO" "Process $pid cmdline: $cmdline" >&2
-                    
-                    # Look for port parameters in various formats
-                    if [[ "$cmdline" =~ --http-port[[:space:]]*[=[:space:]]*([0-9]+) ]]; then
-                        detected_port="${BASH_REMATCH[1]}"
-                        log_message "INFO" "Found port from --http-port parameter: $detected_port" >&2
-                        break
-                    elif [[ "$cmdline" =~ -p[[:space:]]*([0-9]+) ]]; then
-                        detected_port="${BASH_REMATCH[1]}"
-                        log_message "INFO" "Found port from -p parameter: $detected_port" >&2
-                        break
-                    fi
-                fi
-            done
-        fi
-    fi
-    
-    # Method 2: Check netstat/ss for listening ports by the service
-    if [[ -z "$detected_port" ]] && command -v ss >/dev/null 2>&1; then
-        log_message "INFO" "Checking listening ports with ss command..." >&2
-        local listening_ports=$(ss -tulpn 2>/dev/null | grep "$service_name" | grep -o ':[0-9]*' | sed 's/://' | sort -u || true)
-        if [[ -n "$listening_ports" ]]; then
-            # Look for web ports (typically 8000-9999 range for web interfaces)
-            for port in $listening_ports; do
-                if [[ "$port" -ge 8000 ]] && [[ "$port" -le 9999 ]]; then
-                    detected_port="$port"
-                    log_message "INFO" "Found web service port from ss: $detected_port" >&2
-                    break
-                fi
-            done
-            
-            # If no web port found, take the first listening port
-            if [[ -z "$detected_port" ]]; then
-                detected_port=$(echo "$listening_ports" | head -1)
-                log_message "INFO" "Using first listening port from ss: $detected_port" >&2
-            fi
-        fi
-    fi
-    
-    # Method 3: Check common FR24 ports by testing HTTP connectivity
-    if [[ -z "$detected_port" ]]; then
-        log_message "INFO" "Testing common FR24 ports..." >&2
-        local common_ports=(8754 8080 8088 9000 9090)
-        
-        for port in "${common_ports[@]}"; do
-            log_message "INFO" "Testing port $port..." >&2
-            if curl -s --connect-timeout 2 --max-time 5 "http://localhost:$port/monitor.json" >/dev/null 2>&1; then
-                detected_port="$port"
-                log_message "INFO" "Found responsive FR24 endpoint on port: $detected_port" >&2
-                break
-            elif curl -s --connect-timeout 2 --max-time 5 "http://localhost:$port/" >/dev/null 2>&1; then
-                # Check if it responds to root path (might be FR24 web interface)
-                detected_port="$port"
-                log_message "INFO" "Found responsive web service on port: $detected_port (assuming FR24)" >&2
-                break
-            fi
-        done
-    fi
-    
-    # Method 4: Check systemd service configuration if available
-    if [[ -z "$detected_port" ]] && command -v systemctl >/dev/null 2>&1; then
-        log_message "INFO" "Checking systemd service configuration..." >&2
-        local service_status=$(systemctl show "$service_name" --property=ExecStart 2>/dev/null || true)
-        if [[ -n "$service_status" ]]; then
-            log_message "INFO" "Service ExecStart: $service_status" >&2
-            if [[ "$service_status" =~ --http-port[[:space:]]*[=[:space:]]*([0-9]+) ]]; then
-                detected_port="${BASH_REMATCH[1]}"
-                log_message "INFO" "Found port from systemd service config: $detected_port" >&2
-            fi
-        fi
-    fi
-    
-    # Method 5: Check configuration files in common locations
-    if [[ -z "$detected_port" ]]; then
-        log_message "INFO" "Checking configuration files..." >&2
-        local config_paths=(
-            "/etc/fr24feed.ini"
-            "/etc/fr24feed/fr24feed.ini"
-            "/usr/local/etc/fr24feed.ini"
-            "/opt/fr24feed/fr24feed.ini"
-            "$HOME/.fr24feed.ini"
-        )
-        
-        for config_file in "${config_paths[@]}"; do
-            if [[ -r "$config_file" ]]; then
-                log_message "INFO" "Checking config file: $config_file" >&2
-                local port_line=$(grep -i "http.*port" "$config_file" 2>/dev/null | head -1 || true)
-                if [[ -n "$port_line" ]]; then
-                    # Extract port number from various config formats
-                    if [[ "$port_line" =~ [^0-9]([0-9]{4,5})[^0-9] ]]; then
-                        detected_port="${BASH_REMATCH[1]}"
-                        log_message "INFO" "Found port in config file $config_file: $detected_port" >&2
-                        break
-                    fi
-                fi
-            fi
-        done
-    fi
-    
-    if [[ -n "$detected_port" ]]; then
-        echo "$detected_port"
-        return 0
-    else
-        log_message "WARN" "Could not detect FR24 feeder port, using default: 8754" >&2
-        echo "8754"
-        return 1
-    fi
-}
-
-# Function to build endpoint URL with auto-detected port
+# Function to build endpoint URL (FR24 always uses port 8754)
 build_endpoint_url() {
     local provided_endpoint="$1"
     local service_name="$2"
@@ -517,47 +391,43 @@ build_endpoint_url() {
         return 0
     fi
     
-    # If user provided 'auto' or default endpoint, try cached config first
-    if [[ "$provided_endpoint" == "auto" ]] || [[ "$provided_endpoint" == "$DEFAULT_ENDPOINT" ]]; then
-        
-        # Try to load cached endpoint first
-        local cached_endpoint
-        if cached_endpoint=$(load_endpoint_config); then
-            
-            # Verify the cached endpoint still works
-            log_message "INFO" "Verifying cached endpoint is still responsive..." >&2
-            if curl -s --connect-timeout 5 --max-time 10 "$cached_endpoint" >/dev/null 2>&1; then
-                log_message "SUCCESS" "Cached endpoint verified and responsive: $cached_endpoint" >&2
-                echo "$cached_endpoint"
-                return 0
-            else
-                log_message "WARN" "Cached endpoint no longer responsive, will re-detect" >&2
-                clear_endpoint_config
-            fi
-        fi
-        
-        # No valid cached config, perform detection
-        log_message "INFO" "Performing endpoint auto-detection..." >&2
-        local detected_port=$(detect_fr24_port "$service_name")
-        local final_url="http://localhost:$detected_port/monitor.json"
-        
-        log_message "INFO" "Auto-detected FR24 endpoint: $final_url" >&2
-        
-        # Verify the detected endpoint works
-        if curl -s --connect-timeout 5 --max-time 10 "$final_url" >/dev/null 2>&1; then
-            log_message "SUCCESS" "Verified auto-detected endpoint is responsive: $final_url" >&2
-            # Save successful detection to cache
-            save_endpoint_config "$final_url" "$service_name"
-        else
-            log_message "WARN" "Auto-detected endpoint not responsive, you may need to specify --endpoint manually" >&2
-        fi
-        
-        echo "$final_url"
+    # If user provided a hostname/IP, add the standard FR24 port
+    if [[ "$provided_endpoint" != "auto" ]] && [[ "$provided_endpoint" != "$DEFAULT_ENDPOINT" ]]; then
+        echo "http://$provided_endpoint:8754/monitor.json"
         return 0
     fi
     
-    # Fallback: treat as hostname or IP
-    echo "http://$provided_endpoint/monitor.json"
+    # Default case: use cached config or standard FR24 port
+    local cached_endpoint
+    if cached_endpoint=$(load_endpoint_config); then
+        
+        # Verify the cached endpoint still works
+        log_message "INFO" "Verifying cached endpoint is still responsive..." >&2
+        if curl -s --connect-timeout 5 --max-time 10 "$cached_endpoint" >/dev/null 2>&1; then
+            log_message "SUCCESS" "Cached endpoint verified and responsive: $cached_endpoint" >&2
+            echo "$cached_endpoint"
+            return 0
+        else
+            log_message "WARN" "Cached endpoint no longer responsive, using standard FR24 port" >&2
+            clear_endpoint_config
+        fi
+    fi
+    
+    # Use standard FR24 port (8754)
+    local final_url="http://localhost:8754/monitor.json"
+    
+    log_message "INFO" "Using standard FR24 endpoint: $final_url" >&2
+    
+    # Test if the endpoint works and save to cache if successful
+    if curl -s --connect-timeout 5 --max-time 10 "$final_url" >/dev/null 2>&1; then
+        log_message "SUCCESS" "Standard FR24 endpoint is responsive: $final_url" >&2
+        # Save successful detection to cache
+        save_endpoint_config "$final_url" "$service_name"
+    else
+        log_message "WARN" "Standard FR24 endpoint not responsive, may need service restart" >&2
+    fi
+    
+    echo "$final_url"
     return 0
 }
 

@@ -252,6 +252,47 @@ show_status() {
     else
         print_status "WARN" "Logrotate configuration not installed"
     fi
+    
+    echo
+    print_status "INFO" "Database status:"
+    if [[ -f "$DATABASE_FILE" ]]; then
+        local db_size=$(du -h "$DATABASE_FILE" | cut -f1)
+        print_status "SUCCESS" "Database file exists: $DATABASE_FILE ($db_size)"
+        
+        # Get database statistics
+        if command -v sqlite3 >/dev/null 2>&1; then
+            local reboot_count=$(sqlite3 "$DATABASE_FILE" "SELECT COUNT(*) FROM reboot_events;" 2>/dev/null || echo "0")
+            local monitoring_count=$(sqlite3 "$DATABASE_FILE" "SELECT COUNT(*) FROM monitoring_stats;" 2>/dev/null || echo "0")
+            print_status "INFO" "Reboot events logged: $reboot_count"
+            print_status "INFO" "Monitoring records: $monitoring_count"
+        fi
+    else
+        print_status "WARN" "Database file not found: $DATABASE_FILE"
+    fi
+    
+    echo
+    print_status "INFO" "Web dashboard status:"
+    local pid_file="$SCRIPT_DIR/lighttpd.pid"
+    if [[ -f "$pid_file" ]]; then
+        local pid=$(cat "$pid_file")
+        if ps -p "$pid" > /dev/null 2>&1; then
+            print_status "SUCCESS" "Web server running (PID: $pid)"
+            print_status "INFO" "Dashboard URL: http://localhost:$WEB_PORT"
+            
+            # Test if the web server is responsive
+            if curl -s --connect-timeout 2 "http://localhost:$WEB_PORT" >/dev/null 2>&1; then
+                print_status "SUCCESS" "Dashboard is accessible"
+            else
+                print_status "WARN" "Dashboard may not be responding"
+            fi
+        else
+            print_status "WARN" "Web server PID file exists but process is not running"
+            rm -f "$pid_file"
+        fi
+    else
+        print_status "WARN" "Web server not running"
+        print_status "INFO" "Start with: ./fr24_manager.sh start-web"
+    fi
 }
 
 # Function to edit crontab
@@ -481,41 +522,36 @@ server.modules = (
 )
 
 server.document-root        = "$WEB_DIR"
-server.upload-dirs          = ( "/var/cache/lighttpd/uploads" )
 server.errorlog             = "$SCRIPT_DIR/lighttpd_error.log"
 server.pid-file             = "$SCRIPT_DIR/lighttpd.pid"
 server.username             = "$(whoami)"
 server.groupname            = "$(whoami)"
 server.port                 = $WEB_PORT
 
-index-file.names            = ( "index.php", "index.html", "index.lighttpd.html" )
+index-file.names            = ( "index.php", "index.html" )
 url.access-deny             = ( "~", ".inc" )
 static-file.exclude-extensions = ( ".php", ".pl", ".fcgi" )
 
-compress.cache-dir          = "/var/cache/lighttpd/compress/"
-compress.filetype           = ( "application/javascript", "text/css", "text/html", "text/plain" )
-
-# default listening port for IPv6 falls back to the IPv4 port
-include_shell "/usr/share/lighttpd/use-ipv6.pl " + server.port
-include_shell "/usr/share/lighttpd/create-mime.assign.pl"
-include_shell "/usr/share/lighttpd/include-conf-enabled.pl"
-
-# PHP FastCGI configuration
-fastcgi.server = ( ".php" =>
-    ((
-        "bin-path" => "/usr/bin/php-cgi",
-        "socket" => "/tmp/php.socket",
-        "max-procs" => 2,
-        "idle-timeout" => 20,
-        "bin-environment" => (
-            "PHP_FCGI_CHILDREN" => "4",
-            "PHP_FCGI_MAX_REQUESTS" => "10000"
-        ),
-        "bin-copy-environment" => (
-            "PATH", "SHELL", "USER"
-        )
-    ))
+# Basic MIME types
+mimetype.assign = (
+    ".html" => "text/html",
+    ".htm"  => "text/html",
+    ".css"  => "text/css",
+    ".js"   => "application/x-javascript",
+    ".php"  => "application/x-httpd-php",
+    ".png"  => "image/png",
+    ".jpg"  => "image/jpeg",
+    ".jpeg" => "image/jpeg",
+    ".gif"  => "image/gif",
+    ".ico"  => "image/x-icon",
+    ".txt"  => "text/plain"
 )
+
+# PHP FastCGI configuration using PHP-FPM
+fastcgi.server = ( ".php" => ((
+    "socket" => "/run/php/php8.3-fpm.sock",
+    "broken-scriptfilename" => "enable"
+)))
 EOF
 
     if [[ $? -eq 0 ]]; then
@@ -1006,6 +1042,18 @@ EOF
 start_webserver() {
     print_status "INFO" "Starting web server on port $WEB_PORT..."
     
+    # Check if configuration exists
+    if [[ ! -f "$LIGHTTPD_CONFIG" ]]; then
+        print_status "ERROR" "Web server configuration not found. Run install first."
+        return 1
+    fi
+    
+    # Check if web directory exists
+    if [[ ! -d "$WEB_DIR" ]]; then
+        print_status "ERROR" "Web directory not found. Run install first."
+        return 1
+    fi
+    
     # Check if port is already in use
     if netstat -tlnp 2>/dev/null | grep -q ":$WEB_PORT "; then
         print_status "WARN" "Port $WEB_PORT is already in use"
@@ -1016,6 +1064,7 @@ start_webserver() {
             local pid=$(cat "$pid_file")
             if ps -p "$pid" > /dev/null 2>&1; then
                 print_status "INFO" "Web server already running (PID: $pid)"
+                print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
                 return 0
             else
                 # Remove stale PID file
@@ -1024,19 +1073,22 @@ start_webserver() {
         fi
     fi
     
-    # Start lighttpd
-    if lighttpd -f "$LIGHTTPD_CONFIG" -D &>/dev/null & then
+    # Start lighttpd in background
+    if lighttpd -f "$LIGHTTPD_CONFIG" 2>/dev/null & then
         local pid=$!
         echo "$pid" > "$SCRIPT_DIR/lighttpd.pid"
         
         # Wait a moment and check if it started successfully
-        sleep 2
+        sleep 3
         if ps -p "$pid" > /dev/null 2>&1; then
             print_status "SUCCESS" "Web server started successfully (PID: $pid)"
             print_status "INFO" "Dashboard available at: http://localhost:$WEB_PORT"
             return 0
         else
             print_status "ERROR" "Web server failed to start"
+            if [[ -f "$SCRIPT_DIR/lighttpd_error.log" ]]; then
+                print_status "ERROR" "Check error log: $SCRIPT_DIR/lighttpd_error.log"
+            fi
             return 1
         fi
     else
@@ -1156,9 +1208,11 @@ COMMANDS:
 
 EXAMPLES:
     $0 preview      # Preview what will be installed
-    $0 install      # Install complete monitoring system
+    $0 install      # Install complete monitoring system with web dashboard
     $0 status       # Check if monitoring is running
     $0 test         # Test the monitoring script safely
+    $0 start-web    # Start the web dashboard server
+    $0 stop-web     # Stop the web dashboard server
     $0 uninstall    # Remove complete monitoring system
 
 FILES:
@@ -1172,6 +1226,18 @@ INSTALLATION LOCATIONS:
     Logrotate config: $LOGROTATE_DEST
     Web directory: $WEB_DIR
     Database file: $DATABASE_FILE
+
+WEB DASHBOARD:
+    URL: http://localhost:$WEB_PORT
+    Features:
+    - Real-time aircraft tracking statistics
+    - Reboot event history and analytics
+    - System performance monitoring
+    - Detailed logs viewer
+    - Automatic refresh every 60 seconds
+    
+    The dashboard provides a comprehensive view of your FR24 monitoring system
+    including current status, historical events, and system health metrics.
 
 EOF
             ;;

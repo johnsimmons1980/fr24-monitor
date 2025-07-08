@@ -1,0 +1,190 @@
+<?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+$dbFile = dirname(__DIR__) . '/fr24_monitor.db';
+
+// Check if database exists
+if (!file_exists($dbFile)) {
+    die('<div class="alert alert-error">Database not found. Please run the installer first.</div>');
+}
+
+try {
+    $pdo = new PDO('sqlite:' . $dbFile);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die('<div class="alert alert-error">Database connection failed: ' . htmlspecialchars($e->getMessage()) . '</div>');
+}
+
+// Get statistics
+$totalReboots = $pdo->query("SELECT COUNT(*) FROM reboot_events")->fetchColumn();
+$lastReboot = $pdo->query("SELECT timestamp, reason FROM reboot_events ORDER BY timestamp DESC LIMIT 1")->fetch();
+$rebootsToday = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE DATE(timestamp) = DATE('now')")->fetchColumn();
+$rebootsThisWeek = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE timestamp >= DATE('now', '-7 days')")->fetchColumn();
+
+// Get latest monitoring data
+$latestMonitoring = $pdo->query("
+    SELECT tracked_aircraft, uploaded_aircraft, endpoint, timestamp, feed_status, feed_server 
+    FROM monitoring_stats 
+    ORDER BY timestamp DESC 
+    LIMIT 1
+")->fetch();
+
+// Get recent reboot events
+$recentReboots = $pdo->query("
+    SELECT timestamp, tracked_aircraft, threshold, reason, dry_run, uptime_hours, endpoint
+    FROM reboot_events 
+    ORDER BY timestamp DESC 
+    LIMIT 10
+")->fetchAll();
+
+// Get system health trend (last 24 hours)
+$monitoringTrend = $pdo->query("
+    SELECT timestamp, tracked_aircraft, uploaded_aircraft
+    FROM monitoring_stats 
+    WHERE timestamp >= DATETIME('now', '-24 hours')
+    ORDER BY timestamp DESC
+    LIMIT 50
+")->fetchAll();
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FR24 Monitor Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <meta http-equiv="refresh" content="60">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛩️ FR24 Monitor Dashboard</h1>
+            <p>Real-time monitoring and analytics for FlightRadar24 feeder status</p>
+        </div>
+
+        <?php if ($latestMonitoring): ?>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value"><?= $latestMonitoring['tracked_aircraft'] ?? 'N/A' ?></div>
+                    <div class="stat-label">Aircraft Currently Tracked</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-value"><?= $totalReboots ?></div>
+                    <div class="stat-label">Total System Reboots</div>
+                </div>
+                
+                <div class="stat-card <?= $rebootsToday > 0 ? 'warning' : 'success' ?>">
+                    <div class="stat-value"><?= $rebootsToday ?></div>
+                    <div class="stat-label">Reboots Today</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-value"><?= $rebootsThisWeek ?></div>
+                    <div class="stat-label">Reboots This Week</div>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($latestMonitoring): ?>
+            <div class="table-container">
+                <div class="table-header">
+                    <h3>📊 Current System Status</h3>
+                </div>
+                <table>
+                    <tr>
+                        <td><strong>Last Check:</strong></td>
+                        <td><?= date('d/m/Y H:i:s', strtotime($latestMonitoring['timestamp'])) ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Aircraft Tracked:</strong></td>
+                        <td>
+                            <span class="status-indicator <?= $latestMonitoring['tracked_aircraft'] > 0 ? 'status-success' : 'status-error' ?>"></span>
+                            <?= $latestMonitoring['tracked_aircraft'] ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Aircraft Uploaded:</strong></td>
+                        <td><?= $latestMonitoring['uploaded_aircraft'] ?? 'N/A' ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Feed Status:</strong></td>
+                        <td><?= htmlspecialchars($latestMonitoring['feed_status'] ?? 'Unknown') ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Feed Server:</strong></td>
+                        <td><?= htmlspecialchars($latestMonitoring['feed_server'] ?? 'Unknown') ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Endpoint:</strong></td>
+                        <td><?= htmlspecialchars($latestMonitoring['endpoint']) ?></td>
+                    </tr>
+                </table>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($lastReboot): ?>
+            <div class="table-container">
+                <div class="table-header">
+                    <h3>⚠️ Last Reboot Event</h3>
+                </div>
+                <table>
+                    <tr>
+                        <td><strong>Time:</strong></td>
+                        <td><?= date('d/m/Y H:i:s', strtotime($lastReboot['timestamp'])) ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Reason:</strong></td>
+                        <td><?= htmlspecialchars($lastReboot['reason']) ?></td>
+                    </tr>
+                </table>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($recentReboots)): ?>
+            <div class="table-container">
+                <div class="table-header">
+                    <h3>📋 Recent Reboot History</h3>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date/Time</th>
+                            <th>Tracked</th>
+                            <th>Threshold</th>
+                            <th>Uptime (hrs)</th>
+                            <th>Type</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($recentReboots as $reboot): ?>
+                            <tr>
+                                <td><?= date('d/m/Y H:i:s', strtotime($reboot['timestamp'])) ?></td>
+                                <td><?= $reboot['tracked_aircraft'] ?></td>
+                                <td><?= $reboot['threshold'] ?></td>
+                                <td><?= $reboot['uptime_hours'] ?></td>
+                                <td>
+                                    <?php if ($reboot['dry_run']): ?>
+                                        <span class="status-indicator status-warning"></span>Test
+                                    <?php else: ?>
+                                        <span class="status-indicator status-error"></span>Real
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= htmlspecialchars(substr($reboot['reason'], 0, 60)) ?><?= strlen($reboot['reason']) > 60 ? '...' : '' ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+
+        <div class="refresh-info">
+            <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s') ?></p>
+            <p><a href="logs.php" class="btn">View Detailed Logs</a></p>
+        </div>
+    </div>
+</body>
+</html>
