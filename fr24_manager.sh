@@ -604,7 +604,13 @@ mimetype.assign = (
     ".txt"  => "text/plain"
 )
 
-# PHP FastCGI configuration using CGI (more compatible)
+    # Detect available PHP method and create appropriate configuration
+    local php_config=""
+    
+    if command -v php-cgi >/dev/null 2>&1; then
+        print_status "INFO" "Using PHP-CGI for FastCGI"
+        php_config='
+# PHP FastCGI configuration using CGI
 fastcgi.server = ( ".php" => ((
     "bin-path" => "/usr/bin/php-cgi",
     "socket" => "/tmp/php.socket.fr24",
@@ -617,8 +623,30 @@ fastcgi.server = ( ".php" => ((
     "bin-copy-environment" => (
         "PATH", "SHELL", "USER"
     )
-)))
-EOF
+)))'
+    elif [[ -S "/run/php/php8.2-fpm.sock" ]] || [[ -S "/run/php/php-fpm.sock" ]]; then
+        local php_socket="/run/php/php8.2-fpm.sock"
+        if [[ ! -S "$php_socket" ]]; then
+            php_socket="/run/php/php-fpm.sock"
+        fi
+        print_status "INFO" "Using PHP-FPM socket: $php_socket"
+        php_config="
+# PHP FastCGI configuration using PHP-FPM
+fastcgi.server = ( \".php\" => ((
+    \"socket\" => \"$php_socket\",
+    \"broken-scriptfilename\" => \"enable\"
+)))"
+    else
+        print_status "WARN" "No suitable PHP FastCGI method found"
+        print_status "INFO" "Install php-cgi with: sudo apt-get install php-cgi"
+        php_config='
+# PHP FastCGI configuration - DISABLED (no php-cgi found)
+# Install php-cgi with: sudo apt-get install php-cgi
+# fastcgi.server = ( ".php" => (( "disabled" => "true" )))'
+    fi
+
+    # Add PHP configuration to the lighttpd config
+    echo "$php_config" >> "$LIGHTTPD_CONFIG"
 
     if [[ $? -eq 0 ]]; then
         print_status "SUCCESS" "Web server configuration created"
