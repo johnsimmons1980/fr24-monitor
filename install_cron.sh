@@ -110,8 +110,18 @@ install_cron() {
         print_status "INFO" "Removed existing FR24 monitor entries"
     fi
     
-    # Add new cron entries
-    (crontab -l 2>/dev/null; grep -v "^#" "$CRON_FILE" | grep -v "^$") | crontab -
+    # Create a temporary cron file with updated paths
+    local temp_cron=$(mktemp)
+    local log_file=$(get_log_file_path)
+    
+    # Process the cron file and replace placeholders with actual paths
+    sed "s|__MONITOR_SCRIPT_PATH__|$MONITOR_SCRIPT|g; s|__LOG_FILE_PATH__|$log_file|g" "$CRON_FILE" > "$temp_cron"
+    
+    # Add new cron entries with updated paths
+    (crontab -l 2>/dev/null; grep -v "^#" "$temp_cron" | grep -v "^$") | crontab -
+    
+    # Clean up temporary file
+    rm -f "$temp_cron"
     
     if [[ $? -eq 0 ]]; then
         local log_file=$(get_log_file_path)
@@ -196,6 +206,33 @@ edit_cron() {
     crontab -e
 }
 
+# Function to preview the cron entries that would be installed
+preview_cron() {
+    print_status "INFO" "Previewing cron entries that would be installed..."
+    
+    if ! check_script; then
+        return 1
+    fi
+    
+    if [[ ! -f "$CRON_FILE" ]]; then
+        print_status "ERROR" "Cron file not found: $CRON_FILE"
+        return 1
+    fi
+    
+    local log_file=$(get_log_file_path)
+    
+    echo "================================"
+    echo "Cron entries that would be added:"
+    echo "================================"
+    
+    # Show the processed cron entries
+    sed "s|__MONITOR_SCRIPT_PATH__|$MONITOR_SCRIPT|g; s|__LOG_FILE_PATH__|$log_file|g" "$CRON_FILE" | grep -v "^#" | grep -v "^$"
+    
+    echo "================================"
+    print_status "INFO" "Monitor script: $MONITOR_SCRIPT"
+    print_status "INFO" "Log file: $log_file"
+}
+
 # Function to test the monitor script
 test_monitor() {
     print_status "INFO" "Testing FR24 monitor script..."
@@ -235,6 +272,9 @@ main() {
         "test")
             test_monitor
             ;;
+        "preview")
+            preview_cron
+            ;;
         "help"|*)
             local log_file=$(get_log_file_path)
             cat << EOF
@@ -248,9 +288,11 @@ Commands:
     status      Show current crontab status and log info
     edit        Edit crontab manually
     test        Test the monitor script in dry-run mode
+    preview     Show the cron entries that would be installed
     help        Show this help message
 
 Examples:
+    $0 preview      # Preview what will be installed
     $0 install      # Install the cron job
     $0 status       # Check if it's running
     $0 test         # Test the script

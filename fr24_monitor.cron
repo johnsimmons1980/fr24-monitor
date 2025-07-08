@@ -3,17 +3,17 @@
 # Format: minute hour day month weekday command
 
 # Run FR24 monitor every 10 minutes
-*/10 * * * * /home/john/fr24-mon/fr24_monitor.sh --log-file /home/john/fr24-mon/fr24_monitor.log
+*/10 * * * * __MONITOR_SCRIPT_PATH__ --log-file __LOG_FILE_PATH__
 
 # Alternative with more verbose logging (uncomment if needed)
-# */10 * * * * /home/john/fr24-mon/fr24_monitor.sh --verbose --log-file /home/john/fr24-mon/fr24_monitor.log
+# */10 * * * * __MONITOR_SCRIPT_PATH__ --verbose --log-file __LOG_FILE_PATH__
 
 # Alternative with custom settings (examples - uncomment and modify as needed)
-# */10 * * * * /home/john/fr24-mon/fr24_monitor.sh --threshold 5 --min-uptime 1 --log-file /home/john/fr24-mon/fr24_monitor.log
-# */10 * * * * /home/john/fr24-mon/fr24_monitor.sh --service-name piaware --log-file /home/john/fr24-mon/fr24_monitor.log
+# */10 * * * * __MONITOR_SCRIPT_PATH__ --threshold 5 --min-uptime 1 --log-file __LOG_FILE_PATH__
+# */10 * * * * __MONITOR_SCRIPT_PATH__ --service-name piaware --log-file __LOG_FILE_PATH__
 
 # Run a more frequent check during peak hours (every 5 minutes between 6 AM and 11 PM)
-# */5 6-23 * * * /home/john/fr24-mon/fr24_monitor.sh --log-file /home/john/fr24-mon/fr24_monitor.log
+# */5 6-23 * * * __MONITOR_SCRIPT_PATH__ --log-file __LOG_FILE_PATH__
 
 # Run less frequent check during night hours (every 30 minutes between midnight and 6 AM)
-# */30 0-5 * * * /home/john/fr24-mon/fr24_monitor.sh --log-file /home/john/fr24-mon/fr24_monitor.log
+# */30 0-5 * * * __MONITOR_SCRIPT_PATH__ --log-file __LOG_FILE_PATH__
