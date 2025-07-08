@@ -816,13 +816,6 @@ main() {
         mkdir -p "$log_dir"
     fi
     
-    # Load cached configuration if available
-    if ! FINAL_ENDPOINT=$(load_endpoint_config); then
-        # If loading cached config failed, detect endpoint and save config
-        FINAL_ENDPOINT=$(build_endpoint_url "$ENDPOINT" "$FR24_SERVICE_NAME")
-        save_endpoint_config "$FINAL_ENDPOINT" "$FR24_SERVICE_NAME"
-    fi
-    
     # Run monitoring
     monitor_fr24 "$FINAL_ENDPOINT"
     
