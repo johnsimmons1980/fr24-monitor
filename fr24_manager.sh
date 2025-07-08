@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# FR24 Monitor Management Script
+# FR24 Monitor Management Script with Web Dashboard
 # Usage: ./fr24_manager.sh [install|uninstall|status|edit|test|preview|help]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,6 +8,12 @@ CRON_FILE="$SCRIPT_DIR/fr24_monitor.cron"
 MONITOR_SCRIPT="$SCRIPT_DIR/fr24_monitor.sh"
 LOGROTATE_FILE="$SCRIPT_DIR/fr24_logrotate.conf"
 LOGROTATE_DEST="/etc/logrotate.d/fr24_monitor"
+
+# Web dashboard configuration
+WEB_DIR="$SCRIPT_DIR/web"
+DATABASE_FILE="$SCRIPT_DIR/fr24_monitor.db"
+LIGHTTPD_CONFIG="$SCRIPT_DIR/lighttpd.conf"
+WEB_PORT=6869
 
 # Colors for output
 RED='\033[0;31m'
@@ -368,6 +374,725 @@ uninstall_logrotate() {
     return 0
 }
 
+# Function to install database and create schema
+install_database() {
+    print_status "INFO" "Installing database components..."
+    
+    # Check if SQLite is available
+    if ! command -v sqlite3 &> /dev/null; then
+        print_status "INFO" "Installing SQLite3..."
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y sqlite3
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y sqlite3
+        else
+            print_status "ERROR" "Could not install SQLite3. Please install it manually."
+            return 1
+        fi
+    fi
+    
+    # Create database and schema
+    print_status "INFO" "Creating database schema at: $DATABASE_FILE"
+    
+    sqlite3 "$DATABASE_FILE" << 'EOF'
+CREATE TABLE IF NOT EXISTS reboot_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    tracked_aircraft INTEGER,
+    threshold INTEGER,
+    uptime_hours INTEGER,
+    reason TEXT,
+    dry_run BOOLEAN DEFAULT 0,
+    service_restart_attempted BOOLEAN DEFAULT 0,
+    service_restart_successful BOOLEAN DEFAULT 0,
+    endpoint TEXT,
+    system_info TEXT
+);
+
+CREATE TABLE IF NOT EXISTS monitoring_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    tracked_aircraft INTEGER,
+    uploaded_aircraft INTEGER,
+    endpoint TEXT,
+    response_time_ms INTEGER,
+    feed_status TEXT,
+    feed_server TEXT
+);
+
+CREATE TABLE IF NOT EXISTS system_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    uptime_hours INTEGER,
+    system_load TEXT,
+    memory_usage TEXT,
+    disk_usage TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_reboot_timestamp ON reboot_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_monitoring_timestamp ON monitoring_stats(timestamp);
+CREATE INDEX IF NOT EXISTS idx_system_timestamp ON system_status(timestamp);
+EOF
+
+    if [[ $? -eq 0 ]]; then
+        print_status "SUCCESS" "Database schema created successfully"
+        
+        # Set proper permissions
+        chmod 664 "$DATABASE_FILE"
+        
+        return 0
+    else
+        print_status "ERROR" "Failed to create database schema"
+        return 1
+    fi
+}
+
+# Function to install web server and PHP
+install_webserver() {
+    print_status "INFO" "Installing web server components..."
+    
+    # Install lighttpd and PHP
+    if command -v apt-get &> /dev/null; then
+        print_status "INFO" "Installing lighttpd and PHP via apt-get..."
+        sudo apt-get update
+        sudo apt-get install -y lighttpd php-cli php-fpm php-sqlite3
+    elif command -v yum &> /dev/null; then
+        print_status "INFO" "Installing lighttpd and PHP via yum..."
+        sudo yum install -y lighttpd php php-pdo
+    else
+        print_status "ERROR" "Could not install web server. Please install lighttpd and PHP manually."
+        return 1
+    fi
+    
+    # Create web directory
+    mkdir -p "$WEB_DIR"
+    
+    # Create lighttpd configuration
+    print_status "INFO" "Creating lighttpd configuration..."
+    
+    cat > "$LIGHTTPD_CONFIG" << EOF
+server.modules = (
+    "mod_access",
+    "mod_alias",
+    "mod_compress",
+    "mod_redirect",
+    "mod_fastcgi",
+)
+
+server.document-root        = "$WEB_DIR"
+server.upload-dirs          = ( "/var/cache/lighttpd/uploads" )
+server.errorlog             = "$SCRIPT_DIR/lighttpd_error.log"
+server.pid-file             = "$SCRIPT_DIR/lighttpd.pid"
+server.username             = "$(whoami)"
+server.groupname            = "$(whoami)"
+server.port                 = $WEB_PORT
+
+index-file.names            = ( "index.php", "index.html", "index.lighttpd.html" )
+url.access-deny             = ( "~", ".inc" )
+static-file.exclude-extensions = ( ".php", ".pl", ".fcgi" )
+
+compress.cache-dir          = "/var/cache/lighttpd/compress/"
+compress.filetype           = ( "application/javascript", "text/css", "text/html", "text/plain" )
+
+# default listening port for IPv6 falls back to the IPv4 port
+include_shell "/usr/share/lighttpd/use-ipv6.pl " + server.port
+include_shell "/usr/share/lighttpd/create-mime.assign.pl"
+include_shell "/usr/share/lighttpd/include-conf-enabled.pl"
+
+# PHP FastCGI configuration
+fastcgi.server = ( ".php" =>
+    ((
+        "bin-path" => "/usr/bin/php-cgi",
+        "socket" => "/tmp/php.socket",
+        "max-procs" => 2,
+        "idle-timeout" => 20,
+        "bin-environment" => (
+            "PHP_FCGI_CHILDREN" => "4",
+            "PHP_FCGI_MAX_REQUESTS" => "10000"
+        ),
+        "bin-copy-environment" => (
+            "PATH", "SHELL", "USER"
+        )
+    ))
+)
+EOF
+
+    if [[ $? -eq 0 ]]; then
+        print_status "SUCCESS" "Web server configuration created"
+        return 0
+    else
+        print_status "ERROR" "Failed to create web server configuration"
+        return 1
+    fi
+}
+
+# Function to create web dashboard files
+create_web_dashboard() {
+    print_status "INFO" "Creating web dashboard files..."
+    
+    # Create CSS file
+    cat > "$WEB_DIR/style.css" << 'EOF'
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem;
+    border-radius: 10px;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.header p {
+    font-size: 1.1rem;
+    opacity: 0.9;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-left: 4px solid #667eea;
+}
+
+.stat-card.error {
+    border-left-color: #e53e3e;
+}
+
+.stat-card.warning {
+    border-left-color: #dd6b20;
+}
+
+.stat-card.success {
+    border-left-color: #38a169;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #2d3748;
+}
+
+.stat-label {
+    color: #718096;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.table-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.table-header {
+    background: #f7fafc;
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.table-header h3 {
+    color: #2d3748;
+    font-size: 1.2rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+th {
+    background: #f7fafc;
+    font-weight: 600;
+    color: #4a5568;
+}
+
+tr:hover {
+    background: #f7fafc;
+}
+
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+}
+
+.status-success {
+    background: #38a169;
+}
+
+.status-error {
+    background: #e53e3e;
+}
+
+.status-warning {
+    background: #dd6b20;
+}
+
+.refresh-info {
+    text-align: center;
+    color: #718096;
+    font-size: 0.9rem;
+    margin-top: 2rem;
+}
+
+.btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: #667eea;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.btn:hover {
+    background: #5a67d8;
+}
+
+.alert {
+    padding: 1rem;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+}
+
+.alert-error {
+    background: #fed7d7;
+    color: #c53030;
+    border: 1px solid #feb2b2;
+}
+
+.alert-warning {
+    background: #feebc8;
+    color: #c05621;
+    border: 1px solid #fbd38d;
+}
+
+.alert-success {
+    background: #c6f6d5;
+    color: #2f855a;
+    border: 1px solid #9ae6b4;
+}
+EOF
+
+    # Create main dashboard PHP file
+    cat > "$WEB_DIR/index.php" << 'EOF'
+<?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+$dbFile = dirname(__DIR__) . '/fr24_monitor.db';
+
+// Check if database exists
+if (!file_exists($dbFile)) {
+    die('<div class="alert alert-error">Database not found. Please run the installer first.</div>');
+}
+
+try {
+    $pdo = new PDO('sqlite:' . $dbFile);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die('<div class="alert alert-error">Database connection failed: ' . htmlspecialchars($e->getMessage()) . '</div>');
+}
+
+// Get statistics
+$totalReboots = $pdo->query("SELECT COUNT(*) FROM reboot_events")->fetchColumn();
+$lastReboot = $pdo->query("SELECT timestamp, reason FROM reboot_events ORDER BY timestamp DESC LIMIT 1")->fetch();
+$rebootsToday = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE DATE(timestamp) = DATE('now')")->fetchColumn();
+$rebootsThisWeek = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE timestamp >= DATE('now', '-7 days')")->fetchColumn();
+
+// Get latest monitoring data
+$latestMonitoring = $pdo->query("
+    SELECT tracked_aircraft, uploaded_aircraft, endpoint, timestamp, feed_status, feed_server 
+    FROM monitoring_stats 
+    ORDER BY timestamp DESC 
+    LIMIT 1
+")->fetch();
+
+// Get recent reboot events
+$recentReboots = $pdo->query("
+    SELECT timestamp, tracked_aircraft, threshold, reason, dry_run, uptime_hours, endpoint
+    FROM reboot_events 
+    ORDER BY timestamp DESC 
+    LIMIT 10
+")->fetchAll();
+
+// Get system health trend (last 24 hours)
+$monitoringTrend = $pdo->query("
+    SELECT timestamp, tracked_aircraft, uploaded_aircraft
+    FROM monitoring_stats 
+    WHERE timestamp >= DATETIME('now', '-24 hours')
+    ORDER BY timestamp DESC
+    LIMIT 50
+")->fetchAll();
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FR24 Monitor Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <meta http-equiv="refresh" content="60">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛩️ FR24 Monitor Dashboard</h1>
+            <p>Real-time monitoring and analytics for FlightRadar24 feeder status</p>
+        </div>
+
+        <?php if ($latestMonitoring): ?>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value"><?= $latestMonitoring['tracked_aircraft'] ?? 'N/A' ?></div>
+                    <div class="stat-label">Aircraft Currently Tracked</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-value"><?= $totalReboots ?></div>
+                    <div class="stat-label">Total System Reboots</div>
+                </div>
+                
+                <div class="stat-card <?= $rebootsToday > 0 ? 'warning' : 'success' ?>">
+                    <div class="stat-value"><?= $rebootsToday ?></div>
+                    <div class="stat-label">Reboots Today</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-value"><?= $rebootsThisWeek ?></div>
+                    <div class="stat-label">Reboots This Week</div>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($latestMonitoring): ?>
+            <div class="table-container">
+                <div class="table-header">
+                    <h3>📊 Current System Status</h3>
+                </div>
+                <table>
+                    <tr>
+                        <td><strong>Last Check:</strong></td>
+                        <td><?= date('d/m/Y H:i:s', strtotime($latestMonitoring['timestamp'])) ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Aircraft Tracked:</strong></td>
+                        <td>
+                            <span class="status-indicator <?= $latestMonitoring['tracked_aircraft'] > 0 ? 'status-success' : 'status-error' ?>"></span>
+                            <?= $latestMonitoring['tracked_aircraft'] ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Aircraft Uploaded:</strong></td>
+                        <td><?= $latestMonitoring['uploaded_aircraft'] ?? 'N/A' ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Feed Status:</strong></td>
+                        <td><?= htmlspecialchars($latestMonitoring['feed_status'] ?? 'Unknown') ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Feed Server:</strong></td>
+                        <td><?= htmlspecialchars($latestMonitoring['feed_server'] ?? 'Unknown') ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Endpoint:</strong></td>
+                        <td><?= htmlspecialchars($latestMonitoring['endpoint']) ?></td>
+                    </tr>
+                </table>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($lastReboot): ?>
+            <div class="table-container">
+                <div class="table-header">
+                    <h3>⚠️ Last Reboot Event</h3>
+                </div>
+                <table>
+                    <tr>
+                        <td><strong>Time:</strong></td>
+                        <td><?= date('d/m/Y H:i:s', strtotime($lastReboot['timestamp'])) ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Reason:</strong></td>
+                        <td><?= htmlspecialchars($lastReboot['reason']) ?></td>
+                    </tr>
+                </table>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($recentReboots)): ?>
+            <div class="table-container">
+                <div class="table-header">
+                    <h3>📋 Recent Reboot History</h3>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date/Time</th>
+                            <th>Tracked</th>
+                            <th>Threshold</th>
+                            <th>Uptime (hrs)</th>
+                            <th>Type</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($recentReboots as $reboot): ?>
+                            <tr>
+                                <td><?= date('d/m/Y H:i:s', strtotime($reboot['timestamp'])) ?></td>
+                                <td><?= $reboot['tracked_aircraft'] ?></td>
+                                <td><?= $reboot['threshold'] ?></td>
+                                <td><?= $reboot['uptime_hours'] ?></td>
+                                <td>
+                                    <?php if ($reboot['dry_run']): ?>
+                                        <span class="status-indicator status-warning"></span>Test
+                                    <?php else: ?>
+                                        <span class="status-indicator status-error"></span>Real
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= htmlspecialchars(substr($reboot['reason'], 0, 60)) ?><?= strlen($reboot['reason']) > 60 ? '...' : '' ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+
+        <div class="refresh-info">
+            <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s') ?></p>
+            <p><a href="logs.php" class="btn">View Detailed Logs</a></p>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+
+    # Create logs viewer PHP file
+    cat > "$WEB_DIR/logs.php" << 'EOF'
+<?php
+$logFile = dirname(__DIR__) . '/fr24_monitor.log';
+$dbFile = dirname(__DIR__) . '/fr24_monitor.db';
+
+// Read log file
+$logs = [];
+if (file_exists($logFile)) {
+    $logs = array_reverse(array_slice(file($logFile, FILE_IGNORE_NEW_LINES), -100));
+}
+
+// Get database logs
+$dbLogs = [];
+if (file_exists($dbFile)) {
+    try {
+        $pdo = new PDO('sqlite:' . $dbFile);
+        $dbLogs = $pdo->query("
+            SELECT timestamp, tracked_aircraft, uploaded_aircraft, endpoint, feed_status
+            FROM monitoring_stats 
+            ORDER BY timestamp DESC 
+            LIMIT 50
+        ")->fetchAll();
+    } catch (PDOException $e) {
+        // Ignore database errors in logs view
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FR24 Monitor Logs</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📄 FR24 Monitor Logs</h1>
+            <p><a href="index.php" class="btn">← Back to Dashboard</a></p>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h3>💾 Database Monitoring History</h3>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Tracked</th>
+                        <th>Uploaded</th>
+                        <th>Feed Status</th>
+                        <th>Endpoint</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($dbLogs as $log): ?>
+                        <tr>
+                            <td><?= date('d/m/Y H:i:s', strtotime($log['timestamp'])) ?></td>
+                            <td><?= $log['tracked_aircraft'] ?></td>
+                            <td><?= $log['uploaded_aircraft'] ?? 'N/A' ?></td>
+                            <td><?= htmlspecialchars($log['feed_status'] ?? 'Unknown') ?></td>
+                            <td><?= htmlspecialchars(parse_url($log['endpoint'], PHP_URL_HOST) . ':' . parse_url($log['endpoint'], PHP_URL_PORT)) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h3>📝 File-based Logs (Latest 100 entries)</h3>
+            </div>
+            <div style="background: #1a202c; color: #e2e8f0; padding: 1rem; font-family: monospace; font-size: 0.9rem; max-height: 500px; overflow-y: auto;">
+                <?php foreach ($logs as $log): ?>
+                    <div style="margin-bottom: 0.25rem;"><?= htmlspecialchars($log) ?></div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+
+    print_status "SUCCESS" "Web dashboard files created successfully"
+    return 0
+}
+
+# Function to start web server
+start_webserver() {
+    print_status "INFO" "Starting web server on port $WEB_PORT..."
+    
+    # Check if port is already in use
+    if netstat -tlnp 2>/dev/null | grep -q ":$WEB_PORT "; then
+        print_status "WARN" "Port $WEB_PORT is already in use"
+        
+        # Check if it's our lighttpd instance
+        local pid_file="$SCRIPT_DIR/lighttpd.pid"
+        if [[ -f "$pid_file" ]]; then
+            local pid=$(cat "$pid_file")
+            if ps -p "$pid" > /dev/null 2>&1; then
+                print_status "INFO" "Web server already running (PID: $pid)"
+                return 0
+            else
+                # Remove stale PID file
+                rm -f "$pid_file"
+            fi
+        fi
+    fi
+    
+    # Start lighttpd
+    if lighttpd -f "$LIGHTTPD_CONFIG" -D &>/dev/null & then
+        local pid=$!
+        echo "$pid" > "$SCRIPT_DIR/lighttpd.pid"
+        
+        # Wait a moment and check if it started successfully
+        sleep 2
+        if ps -p "$pid" > /dev/null 2>&1; then
+            print_status "SUCCESS" "Web server started successfully (PID: $pid)"
+            print_status "INFO" "Dashboard available at: http://localhost:$WEB_PORT"
+            return 0
+        else
+            print_status "ERROR" "Web server failed to start"
+            return 1
+        fi
+    else
+        print_status "ERROR" "Failed to start web server"
+        return 1
+    fi
+}
+
+# Function to stop web server
+stop_webserver() {
+    local pid_file="$SCRIPT_DIR/lighttpd.pid"
+    
+    if [[ -f "$pid_file" ]]; then
+        local pid=$(cat "$pid_file")
+        if ps -p "$pid" > /dev/null 2>&1; then
+            print_status "INFO" "Stopping web server (PID: $pid)..."
+            kill "$pid"
+            rm -f "$pid_file"
+            print_status "SUCCESS" "Web server stopped"
+        else
+            print_status "INFO" "Web server not running"
+            rm -f "$pid_file"
+        fi
+    else
+        print_status "INFO" "Web server PID file not found"
+    fi
+}
+
+# Function to uninstall web components
+uninstall_web_components() {
+    print_status "INFO" "Removing web dashboard components..."
+    
+    # Stop web server
+    stop_webserver
+    
+    # Remove web files
+    if [[ -d "$WEB_DIR" ]]; then
+        rm -rf "$WEB_DIR"
+        print_status "INFO" "Removed web directory"
+    fi
+    
+    # Remove configuration files
+    rm -f "$LIGHTTPD_CONFIG"
+    rm -f "$SCRIPT_DIR/lighttpd_error.log"
+    
+    # Ask about database
+    read -p "Do you want to remove the database file? This will delete all monitoring history. (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -f "$DATABASE_FILE"
+        print_status "INFO" "Database file removed"
+    fi
+    
+    print_status "SUCCESS" "Web components uninstalled"
+}
+
 # Main function
 main() {
     local action="${1:-help}"
@@ -376,10 +1101,15 @@ main() {
         "install")
             install_cron
             install_logrotate
+            install_database
+            install_webserver
+            create_web_dashboard
+            start_webserver
             ;;
         "uninstall")
             uninstall_cron
             uninstall_logrotate
+            uninstall_web_components
             ;;
         "status")
             show_status
@@ -393,22 +1123,33 @@ main() {
         "preview")
             preview_cron
             ;;
+        "start-web")
+            start_webserver
+            ;;
+        "stop-web")
+            stop_webserver
+            ;;
         "help"|*)
             local log_file=$(get_log_file_path)
             cat << EOF
-FR24 Monitor Management Tool
+FR24 Monitor Management Tool with Web Dashboard
 
 Usage: $0 [command]
 
 DESCRIPTION:
-    Complete management tool for the FR24 monitoring system. Handles installation,
-    configuration, testing, monitoring, and removal of all components.
+    Complete management tool for the FR24 monitoring system with web dashboard.
+    Handles installation, configuration, testing, monitoring, database logging,
+    and web dashboard for all components.
 
 COMMANDS:
-    install     Install FR24 monitor crontab and logrotate configuration
-    uninstall   Remove FR24 monitor from crontab and remove logrotate config
-    status      Show current system status, cron jobs, logs, and logrotate config
+    install     Install FR24 monitor with cron, logrotate, database, and web dashboard
+    uninstall   Remove FR24 monitor and all components (cron, logrotate, web, database)
+    status      Show current system status, cron jobs, logs, and web server status
     edit        Edit crontab manually
+    test        Test the monitor script in dry-run mode
+    preview     Show the cron and logrotate entries that would be installed
+    start-web   Start the web dashboard server
+    stop-web    Stop the web dashboard server
     test        Test the monitor script in dry-run mode
     preview     Show the cron and logrotate entries that would be installed
     help        Show this help message
@@ -429,6 +1170,8 @@ FILES:
 INSTALLATION LOCATIONS:
     Cron entries: User's crontab
     Logrotate config: $LOGROTATE_DEST
+    Web directory: $WEB_DIR
+    Database file: $DATABASE_FILE
 
 EOF
             ;;

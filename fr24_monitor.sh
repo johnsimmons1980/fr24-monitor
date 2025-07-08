@@ -258,6 +258,7 @@ restart_fr24_service() {
 get_fr24_stats() {
     local endpoint="$1"
     local temp_file=$(mktemp)
+    local start_time=$(date +%s%3N)  # milliseconds
     
     log_message "INFO" "Fetching data from: $endpoint" >&2
     
@@ -274,6 +275,7 @@ get_fr24_stats() {
             
             # Retry the connection after service restart
             log_message "INFO" "Retrying connection after service restart..." >&2
+            start_time=$(date +%s%3N)  # Reset timer for retry
             if curl -s --connect-timeout 10 --max-time 30 "$endpoint" -o "$temp_file"; then
                 log_message "SUCCESS" "Successfully reconnected after service restart" >&2
             else
@@ -287,7 +289,10 @@ get_fr24_stats() {
         fi
     fi
     
-    log_message "INFO" "Successfully fetched data from FR24 endpoint" >&2
+    local end_time=$(date +%s%3N)
+    local response_time=$((end_time - start_time))
+    
+    log_message "INFO" "Successfully fetched data from FR24 endpoint (${response_time}ms)" >&2
     
     # Check if response is valid JSON
     if ! jq . "$temp_file" >/dev/null 2>&1; then
@@ -325,17 +330,22 @@ get_fr24_stats() {
     
     log_message "INFO" "Parsed values - Tracked: $tracked, Uploaded: $uploaded" >&2
     
-    echo "$tracked,$uploaded"
+    echo "$tracked,$uploaded,$response_time,$feed_status,$feed_server"
     return 0
 }
 
 # Function to reboot the server
 reboot_server() {
     local reason="$1"
+    local tracked="${2:-0}"
+    local endpoint="${3:-unknown}"
     
     # Check uptime before rebooting
     local uptime_hours=$(get_uptime_hours)
     log_message "INFO" "Current system uptime: $uptime_hours hours (minimum required: $MINIMUM_UPTIME_HOURS hours)"
+    
+    # Log reboot event to database
+    log_reboot_event "$tracked" "$TRACKED_THRESHOLD" "$uptime_hours" "$reason" "$DRY_RUN" "false" "false" "$endpoint"
     
     if [[ "$uptime_hours" -lt "$MINIMUM_UPTIME_HOURS" ]]; then
         log_message "WARN" "System uptime ($uptime_hours hours) is less than minimum required ($MINIMUM_UPTIME_HOURS hours)"
@@ -630,16 +640,107 @@ clear_endpoint_config() {
     fi
 }
 
+# Database logging configuration
+DATABASE_FILE="$SCRIPT_DIR/fr24_monitor.db"
+
+# Function to log monitoring data to database
+log_to_database() {
+    local table="$1"
+    local data="$2"
+    
+    # Only log to database if it exists
+    if [[ ! -f "$DATABASE_FILE" ]]; then
+        return 0
+    fi
+    
+    # Check if sqlite3 is available
+    if ! command -v sqlite3 &> /dev/null; then
+        return 0
+    fi
+    
+    # Execute the SQL safely
+    echo "$data" | sqlite3 "$DATABASE_FILE" 2>/dev/null || true
+}
+
+# Function to log reboot event to database
+log_reboot_event() {
+    local tracked="$1"
+    local threshold="$2"
+    local uptime_hours="$3"
+    local reason="$4"
+    local dry_run="$5"
+    local service_restart_attempted="$6"
+    local service_restart_successful="$7"
+    local endpoint="$8"
+    
+    local system_info="$(uname -a)"
+    local dry_run_flag=$([ "$dry_run" == "true" ] && echo 1 || echo 0)
+    local restart_attempted_flag=$([ "$service_restart_attempted" == "true" ] && echo 1 || echo 0)
+    local restart_successful_flag=$([ "$service_restart_successful" == "true" ] && echo 1 || echo 0)
+    
+    local sql="INSERT INTO reboot_events (tracked_aircraft, threshold, uptime_hours, reason, dry_run, service_restart_attempted, service_restart_successful, endpoint, system_info) VALUES ($tracked, $threshold, $uptime_hours, '$reason', $dry_run_flag, $restart_attempted_flag, $restart_successful_flag, '$endpoint', '$system_info');"
+    
+    log_to_database "reboot_events" "$sql"
+}
+
+# Function to log monitoring stats to database
+log_monitoring_stats() {
+    local tracked="$1"
+    local uploaded="$2"
+    local endpoint="$3"
+    local response_time="$4"
+    local feed_status="$5"
+    local feed_server="$6"
+    
+    # Replace N/A with NULL for database
+    uploaded=$([ "$uploaded" == "N/A" ] && echo "NULL" || echo "$uploaded")
+    
+    local sql="INSERT INTO monitoring_stats (tracked_aircraft, uploaded_aircraft, endpoint, response_time_ms, feed_status, feed_server) VALUES ($tracked, $uploaded, '$endpoint', $response_time, '$feed_status', '$feed_server');"
+    
+    log_to_database "monitoring_stats" "$sql"
+}
+
+# Function to log system status to database
+log_system_status() {
+    local uptime_hours="$1"
+    
+    # Get system metrics
+    local system_load=$(uptime | awk -F'load average:' '{ print $2 }' | tr -d ' ')
+    local memory_usage="N/A"
+    local disk_usage="N/A"
+    
+    # Try to get memory usage
+    if command -v free >/dev/null 2>&1; then
+        memory_usage=$(free -m | awk 'NR==2{printf "%.1f%%", $3*100/$2}')
+    fi
+    
+    # Try to get disk usage
+    if command -v df >/dev/null 2>&1; then
+        disk_usage=$(df -h / | awk 'NR==2{print $5}')
+    fi
+    
+    local sql="INSERT INTO system_status (uptime_hours, system_load, memory_usage, disk_usage) VALUES ($uptime_hours, '$system_load', '$memory_usage', '$disk_usage');"
+    
+    log_to_database "system_status" "$sql"
+}
+
 # Main monitoring function
 monitor_fr24() {
     local endpoint="$1"
     
     log_message "INFO" "Starting FR24 monitoring check"
     
+    # Get current uptime for system status logging
+    local current_uptime=$(get_uptime_hours)
+    
     # Show current uptime in verbose mode only
     if [[ "$VERBOSE" == "true" ]]; then
-        local current_uptime=$(get_uptime_hours)
         log_message "INFO" "Current system uptime: $current_uptime hours"
+    fi
+    
+    # Log system status to database periodically (only if not dry run)
+    if [[ "$DRY_RUN" == "false" ]]; then
+        log_system_status "$current_uptime"
     fi
     
     # Get current stats
@@ -649,9 +750,15 @@ monitor_fr24() {
         exit 1
     fi
     
-    IFS=',' read -r tracked uploaded <<< "$stats_result"
+    # Parse the extended stats format: tracked,uploaded,response_time,feed_status,feed_server
+    IFS=',' read -r tracked uploaded response_time feed_status feed_server <<< "$stats_result"
     
     log_message "INFO" "Aircraft tracked: $tracked, uploaded: $uploaded"
+    
+    # Log monitoring stats to database (only if not dry run)
+    if [[ "$DRY_RUN" == "false" ]]; then
+        log_monitoring_stats "$tracked" "$uploaded" "$endpoint" "$response_time" "$feed_status" "$feed_server"
+    fi
     
     # Check if we need to reboot
     if [[ "$tracked" -le "$TRACKED_THRESHOLD" ]]; then
@@ -659,7 +766,7 @@ monitor_fr24() {
         log_message "WARN" "Current tracked: $tracked (threshold: $TRACKED_THRESHOLD)"
         
         local reason="Aircraft tracking has dropped to $tracked (threshold: $TRACKED_THRESHOLD). Rebooting server."
-        if reboot_server "$reason"; then
+        if reboot_server "$reason" "$tracked" "$endpoint"; then
             log_message "INFO" "Reboot action completed successfully"
             exit 0  # Successful reboot or dry-run
         else
