@@ -93,8 +93,22 @@ else
 fi
 
 echo ""
+
+# Check PHP FastCGI socket
+echo "8. Checking PHP FastCGI socket..."
+CURRENT_USER=$(whoami)
+SOCKET_PATH="/tmp/php.socket.$CURRENT_USER"
+if [[ -S "$SOCKET_PATH" ]]; then
+    echo "✅ PHP socket exists: $SOCKET_PATH"
+else
+    echo "❌ PHP socket missing: $SOCKET_PATH"
+    echo "   This is likely why the web server can't serve PHP pages"
+fi
+
+echo ""
 echo "🔧 Suggested fixes:"
 echo "1. If php-cgi is missing: sudo apt-get install php-cgi"
 echo "2. If config has errors: Check the lighttpd.conf file"
 echo "3. If process died: Check lighttpd_error.log for details"
-echo "4. Try manual start: lighttpd -D -f lighttpd.conf"
+echo "4. If socket path is wrong: Regenerate config with correct username"
+echo "5. Try manual start: lighttpd -D -f lighttpd.conf"

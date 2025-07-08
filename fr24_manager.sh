@@ -571,12 +571,13 @@ install_webserver() {
     
     # Detect available PHP method
     local php_config=""
+    local current_user=$(whoami)
     if command -v php-cgi >/dev/null 2>&1; then
         print_status "INFO" "Using PHP-CGI for FastCGI"
         php_config='# PHP FastCGI configuration using CGI
 fastcgi.server = ( ".php" => ((
     "bin-path" => "/usr/bin/php-cgi",
-    "socket" => "/tmp/php.socket.fr24",
+    "socket" => "/tmp/php.socket.'$current_user'",
     "max-procs" => 2,
     "idle-timeout" => 20,
     "bin-environment" => (
