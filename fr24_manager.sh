@@ -415,6 +415,60 @@ uninstall_logrotate() {
     return 0
 }
 
+# Function to migrate database schema if needed
+migrate_database() {
+    if [[ ! -f "$DATABASE_FILE" ]]; then
+        return 0  # No database to migrate
+    fi
+    
+    print_status "INFO" "Checking database schema for updates..."
+    
+    # Check if we need to migrate system_status table (old version had different columns)
+    local old_columns
+    old_columns=$(sqlite3 "$DATABASE_FILE" "PRAGMA table_info(system_status);" 2>/dev/null | grep -c "system_load\|memory_usage\|disk_usage")
+    
+    if [[ "$old_columns" -gt 0 ]]; then
+        print_status "INFO" "Migrating system_status table to new schema..."
+        
+        # Backup old table and create new one
+        sqlite3 "$DATABASE_FILE" << 'EOF'
+-- Rename old table
+ALTER TABLE system_status RENAME TO system_status_old;
+
+-- Create new table with simplified schema
+CREATE TABLE system_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    check_status TEXT,
+    tracked_aircraft INTEGER,
+    threshold INTEGER,
+    uptime_hours INTEGER
+);
+
+-- Create index
+CREATE INDEX IF NOT EXISTS idx_system_timestamp ON system_status(timestamp);
+
+-- Optionally copy some data from old table (basic info only)
+INSERT INTO system_status (timestamp, check_status, tracked_aircraft, threshold, uptime_hours)
+SELECT timestamp, 'MIGRATED', 0, 0, uptime_hours 
+FROM system_status_old 
+ORDER BY timestamp DESC 
+LIMIT 10;
+
+-- Drop old table
+DROP TABLE system_status_old;
+EOF
+        
+        if [[ $? -eq 0 ]]; then
+            print_status "SUCCESS" "Database schema migrated successfully"
+        else
+            print_status "WARN" "Database migration had issues, but continuing..."
+        fi
+    else
+        print_status "SUCCESS" "Database schema is up to date"
+    fi
+}
+
 # Function to install database and create schema
 install_database() {
     print_status "INFO" "Installing database components..."
@@ -432,6 +486,9 @@ install_database() {
             return 1
         fi
     fi
+    
+    # Migrate existing database if needed
+    migrate_database
     
     # Create database and schema
     print_status "INFO" "Creating database schema at: $DATABASE_FILE"
@@ -465,10 +522,10 @@ CREATE TABLE IF NOT EXISTS monitoring_stats (
 CREATE TABLE IF NOT EXISTS system_status (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    uptime_hours INTEGER,
-    system_load TEXT,
-    memory_usage TEXT,
-    disk_usage TEXT
+    check_status TEXT,
+    tracked_aircraft INTEGER,
+    threshold INTEGER,
+    uptime_hours INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_reboot_timestamp ON reboot_events(timestamp);

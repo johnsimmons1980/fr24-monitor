@@ -570,26 +570,14 @@ log_monitoring_stats() {
     log_to_database "monitoring_stats" "$sql"
 }
 
-# Function to log system status to database
-log_system_status() {
-    local uptime_hours="$1"
+# Function to log monitoring result to database
+log_monitoring_result() {
+    local check_status="$1"
+    local tracked="$2"
+    local threshold="$3"
+    local uptime_hours="$4"
     
-    # Get system metrics
-    local system_load=$(uptime | awk -F'load average:' '{ print $2 }' | tr -d ' ')
-    local memory_usage="N/A"
-    local disk_usage="N/A"
-    
-    # Try to get memory usage
-    if command -v free >/dev/null 2>&1; then
-        memory_usage=$(free -m | awk 'NR==2{printf "%.1f%%", $3*100/$2}')
-    fi
-    
-    # Try to get disk usage
-    if command -v df >/dev/null 2>&1; then
-        disk_usage=$(df -h / | awk 'NR==2{print $5}')
-    fi
-    
-    local sql="INSERT INTO system_status (uptime_hours, system_load, memory_usage, disk_usage) VALUES ($uptime_hours, '$system_load', '$memory_usage', '$disk_usage');"
+    local sql="INSERT INTO system_status (check_status, tracked_aircraft, threshold, uptime_hours) VALUES ('$check_status', $tracked, $threshold, $uptime_hours);"
     
     log_to_database "system_status" "$sql"
 }
@@ -617,6 +605,12 @@ monitor_fr24() {
     local stats_result
     if ! stats_result=$(get_fr24_stats "$endpoint"); then
         log_message "ERROR" "Failed to get FR24 statistics - monitoring check failed"
+        
+        # Log failure to database (only if not dry run)
+        if [[ "$DRY_RUN" == "false" ]]; then
+            log_monitoring_result "FAILED" "0" "$TRACKED_THRESHOLD" "$current_uptime"
+        fi
+        
         exit 1
     fi
     
@@ -635,6 +629,11 @@ monitor_fr24() {
         log_message "WARN" "ALERT: Aircraft tracking has dropped to critical level!"
         log_message "WARN" "Current tracked: $tracked (threshold: $TRACKED_THRESHOLD)"
         
+        # Log critical status to database (only if not dry run)
+        if [[ "$DRY_RUN" == "false" ]]; then
+            log_monitoring_result "CRITICAL" "$tracked" "$TRACKED_THRESHOLD" "$current_uptime"
+        fi
+        
         local reason="Aircraft tracking has dropped to $tracked (threshold: $TRACKED_THRESHOLD). Rebooting server."
         if reboot_server "$reason" "$tracked" "$endpoint"; then
             log_message "INFO" "Reboot action completed successfully"
@@ -645,6 +644,11 @@ monitor_fr24() {
         fi
     else
         log_message "SUCCESS" "Aircraft tracking healthy ($tracked aircraft tracked)"
+        
+        # Log success status to database (only if not dry run)
+        if [[ "$DRY_RUN" == "false" ]]; then
+            log_monitoring_result "SUCCESS" "$tracked" "$TRACKED_THRESHOLD" "$current_uptime"
+        fi
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then

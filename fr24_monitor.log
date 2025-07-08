@@ -120,3 +120,50 @@
 [09/07/2025 00:01:58] [INFO] Retrying connection after service restart...
 [09/07/2025 00:02:02] [ERROR] Still cannot connect after service restart
 [09/07/2025 00:02:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 00:09:19] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 00:09:19] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 00:09:19] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 00:09:19] [INFO] Starting FR24 monitoring check
+[09/07/2025 00:09:19] [INFO] Current system uptime: 14 hours
+[09/07/2025 00:09:19] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 00:09:19] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 00:09:19] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 00:09:19] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 00:09:19] [INFO] DRY RUN: Would restart service now
+[09/07/2025 00:09:19] [INFO] DRY RUN: Command that would be executed: sudo systemctl restart fr24feed
+[09/07/2025 00:09:19] [INFO] Service restarted, waiting 30 seconds before retry...
+[09/07/2025 00:09:49] [INFO] Retrying connection after service restart...
+[09/07/2025 00:09:49] [ERROR] Still cannot connect after service restart
+[09/07/2025 00:09:49] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 00:10:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 00:10:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 00:10:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 00:10:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 00:10:37] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 00:10:37] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 00:10:37] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 00:10:37] [INFO] Starting FR24 monitoring check
+[09/07/2025 00:10:37] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 00:10:37] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 00:10:37] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 00:10:37] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 00:10:37] [INFO] DRY RUN: Would restart service now
+[09/07/2025 00:10:37] [INFO] DRY RUN: Command that would be executed: sudo systemctl restart fr24feed
+[09/07/2025 00:10:37] [INFO] Service restarted, waiting 30 seconds before retry...
+[09/07/2025 00:11:07] [INFO] Retrying connection after service restart...
+[09/07/2025 00:11:07] [ERROR] Still cannot connect after service restart
+[09/07/2025 00:11:07] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 00:12:36] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 00:12:36] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 00:12:36] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 00:12:36] [INFO] Starting FR24 monitoring check
+[09/07/2025 00:12:36] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 00:12:36] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 00:12:36] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 00:12:36] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 00:12:36] [INFO] DRY RUN: Would restart service now
+[09/07/2025 00:12:36] [INFO] DRY RUN: Command that would be executed: sudo systemctl restart fr24feed
+[09/07/2025 00:12:36] [INFO] Service restarted, waiting 30 seconds before retry...
+[09/07/2025 00:13:06] [INFO] Retrying connection after service restart...
+[09/07/2025 00:13:06] [ERROR] Still cannot connect after service restart
+[09/07/2025 00:13:06] [ERROR] Failed to get FR24 statistics - monitoring check failed

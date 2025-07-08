@@ -431,9 +431,11 @@ The FR24 Monitor includes a comprehensive web dashboard accessible at **http://l
 
 ### Database Integration
 All monitoring data is stored in a local SQLite database including:
-- **Monitoring statistics** (aircraft counts, response times, feed status)
-- **Reboot events** (timestamps, reasons, system state)
-- **System status** (uptime, memory, disk usage)
+- **Monitoring statistics** (aircraft counts, response times, feed status) - logged every 10 minutes
+- **Reboot events** (timestamps, reasons, system state) - logged only when issues occur
+- **Check results** (SUCCESS/FAILED/CRITICAL status with essential context) - logged every 10 minutes
+
+The database stores only essential data to prevent bloat while maintaining useful historical information.
 
 The database can be accessed directly for custom analysis:
 ```bash
@@ -461,7 +463,7 @@ sqlite3 /path/to/fr24-monitor/fr24_monitor.db
 Edit the cron schedule by modifying `fr24_monitor.cron` before installation:
 
 ```bash
-# Every 5 minutes
+# Every 10 minutes (default)
 */5 * * * * __MONITOR_SCRIPT_PATH__ --log-file __LOG_FILE_PATH__
 
 # Every 30 minutes
