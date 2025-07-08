@@ -6,13 +6,16 @@
 
 set -euo pipefail
 
+# Get script directory for portable paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Default configuration
 DEFAULT_ENDPOINT="http://localhost:8754/monitor.json"  # Common FR24 feeder endpoint
 TRACKED_THRESHOLD=0
 MINIMUM_UPTIME_HOURS=2  # Minimum uptime before allowing reboot
 DRY_RUN=false
 VERBOSE=false
-LOG_FILE="$HOME/fr24_monitor.log"  # Use home directory by default
+LOG_FILE="$SCRIPT_DIR/fr24_monitor.log"  # Use script directory by default
 MAX_LOG_SIZE_MB=2  # Maximum log file size in MB before rotation
 MAX_LOG_FILES=2     # Maximum number of rotated log files to keep
 FR24_SERVICE_NAME="fr24feed"  # Default FR24 service name

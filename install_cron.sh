@@ -34,6 +34,29 @@ print_status() {
     esac
 }
 
+# Function to get the log file path from the monitor script
+get_log_file_path() {
+    # Extract the LOG_FILE value from the monitor script
+    local log_line=$(grep "^LOG_FILE=" "$MONITOR_SCRIPT" | head -1)
+    
+    # Check if it uses $SCRIPT_DIR variable
+    if [[ "$log_line" == *'$SCRIPT_DIR'* ]]; then
+        # Extract the filename part and combine with our script directory
+        local filename=$(echo "$log_line" | sed 's/.*\$SCRIPT_DIR\///; s/".*$//')
+        echo "$SCRIPT_DIR/$filename"
+    else
+        # Extract the full path (handles quoted paths)
+        local log_path=$(echo "$log_line" | cut -d'"' -f2)
+        
+        # If we can't find it or it's empty, fall back to script directory
+        if [[ -z "$log_path" ]]; then
+            log_path="$SCRIPT_DIR/fr24_monitor.log"
+        fi
+        
+        echo "$log_path"
+    fi
+}
+
 # Function to check if script exists and is executable
 check_script() {
     if [[ ! -f "$MONITOR_SCRIPT" ]]; then
@@ -91,9 +114,10 @@ install_cron() {
     (crontab -l 2>/dev/null; grep -v "^#" "$CRON_FILE" | grep -v "^$") | crontab -
     
     if [[ $? -eq 0 ]]; then
+        local log_file=$(get_log_file_path)
         print_status "SUCCESS" "FR24 monitor crontab installed successfully"
         print_status "INFO" "The monitor will run every 10 minutes"
-        print_status "INFO" "Check logs at: $SCRIPT_DIR/fr24_monitor.log"
+        print_status "INFO" "Check logs at: $log_file"
     else
         print_status "ERROR" "Failed to install crontab"
         return 1
@@ -154,12 +178,13 @@ show_status() {
     fi
     
     echo
-    print_status "INFO" "Log file location: $SCRIPT_DIR/fr24_monitor.log"
-    if [[ -f "$SCRIPT_DIR/fr24_monitor.log" ]]; then
-        local log_size=$(du -h "$SCRIPT_DIR/fr24_monitor.log" | cut -f1)
+    local log_file_path=$(get_log_file_path)
+    print_status "INFO" "Log file location: $log_file_path"
+    if [[ -f "$log_file_path" ]]; then
+        local log_size=$(du -h "$log_file_path" | cut -f1)
         print_status "INFO" "Log file size: $log_size"
         print_status "INFO" "Last 3 entries:"
-        tail -3 "$SCRIPT_DIR/fr24_monitor.log" 2>/dev/null || echo "  (Log file is empty or unreadable)"
+        tail -3 "$log_file_path" 2>/dev/null || echo "  (Log file is empty or unreadable)"
     else
         print_status "WARN" "Log file does not exist yet"
     fi
@@ -211,6 +236,7 @@ main() {
             test_monitor
             ;;
         "help"|*)
+            local log_file=$(get_log_file_path)
             cat << EOF
 FR24 Monitor Crontab Management
 
@@ -233,7 +259,7 @@ Examples:
 Files:
     Monitor script: $MONITOR_SCRIPT
     Cron template:  $CRON_FILE
-    Log file:       $SCRIPT_DIR/fr24_monitor.log
+    Log file:       $log_file
 
 EOF
             ;;
