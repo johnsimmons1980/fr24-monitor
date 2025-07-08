@@ -145,6 +145,16 @@ install_cron() {
         else
             print_status "WARN" "Cron installed but logrotate installation failed"
         fi
+        
+        # Run the monitor script once to populate the log immediately
+        print_status "INFO" "Running monitor script once to populate log file..."
+        if bash "$MONITOR_SCRIPT" --dry-run >/dev/null 2>&1; then
+            print_status "SUCCESS" "Monitor script executed successfully - log file populated"
+            print_status "INFO" "You can check the initial log entry with: tail -f $log_file"
+        else
+            print_status "WARN" "Monitor script execution failed, but installation is complete"
+            print_status "INFO" "The monitor will start working on its next scheduled run"
+        fi
     else
         print_status "ERROR" "Failed to install crontab"
         return 1

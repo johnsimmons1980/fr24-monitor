@@ -136,7 +136,7 @@ rotate_logs() {
 log_message() {
     local level="$1"
     local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp=$(date '+%d/%m/%Y %H:%M:%S')
     
     # Rotate logs if needed (check only once per script run)
     if [[ ! -f "$HOME/.fr24_log_rotated_$$" ]]; then
@@ -555,7 +555,7 @@ build_endpoint_url() {
 save_endpoint_config() {
     local endpoint="$1"
     local service_name="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp=$(date '+%d/%m/%Y %H:%M:%S')
     
     log_message "INFO" "Saving endpoint configuration to $CONFIG_FILE" >&2
     
