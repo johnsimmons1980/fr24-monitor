@@ -16,6 +16,7 @@ MINIMUM_UPTIME_HOURS=2  # Minimum uptime before allowing reboot
 DRY_RUN=false
 VERBOSE=false
 LOG_FILE="$SCRIPT_DIR/fr24_monitor.log"  # Use script directory by default
+CONFIG_FILE="$SCRIPT_DIR/.fr24_monitor_config"  # Configuration file for cached settings
 MAX_LOG_SIZE_MB=2  # Maximum log file size in MB before rotation
 MAX_LOG_FILES=2     # Maximum number of rotated log files to keep
 FR24_SERVICE_NAME="fr24feed"  # Default FR24 service name
@@ -38,7 +39,7 @@ OPTIONS:
     --endpoint URL|PORT|auto  FR24 monitoring endpoint. Can be:
                               - Full URL: http://localhost:8754/monitor.json
                               - Port number: 8754 (will build URL automatically) 
-                              - 'auto' to auto-detect port (default behavior)
+                              - 'auto' to auto-detect port (cached after first detection)
                               - IP/hostname: 192.168.1.100 (will add :8754/monitor.json)
                               (default: auto-detect or $DEFAULT_ENDPOINT)
     --dry-run                Run in dry-run mode (don't actually reboot)
@@ -49,11 +50,14 @@ OPTIONS:
     --max-log-size MB        Maximum log file size in MB before rotation (default: $MAX_LOG_SIZE_MB)
     --max-log-files N        Maximum number of rotated log files to keep (default: $MAX_LOG_FILES)
     --service-name NAME      FR24 service name to restart if endpoint fails (default: fr24feed)
+    --clear-cache            Clear cached endpoint configuration and re-detect
+    --show-config            Show current cached configuration
     --help                   Show this help message
 
 CONFIGURATION:
     Default endpoint: auto-detect or $DEFAULT_ENDPOINT
     Default log file: $LOG_FILE
+    Default config file: $CONFIG_FILE
     Default reboot threshold: tracked <= $TRACKED_THRESHOLD
     Default minimum uptime: $MINIMUM_UPTIME_HOURS hours
     Default max log size: $MAX_LOG_SIZE_MB MB
@@ -61,17 +65,26 @@ CONFIGURATION:
     Default service name: $FR24_SERVICE_NAME
 
 Examples:
-    $0 --dry-run                                    # Auto-detect port and test
+    $0 --dry-run                                    # Auto-detect port and test (uses cache)
     $0 --endpoint auto --dry-run                    # Explicitly auto-detect port
     $0 --endpoint 8754 --dry-run                    # Use specific port
     $0 --endpoint http://192.168.1.100:8754/monitor.json --dry-run  # Full URL
     $0 --endpoint 192.168.1.100 --dry-run          # Remote host (will use port 8754)
+    $0 --clear-cache --dry-run                      # Clear cache and re-detect
+    $0 --show-config                                # Show cached configuration
     $0 --verbose                                    # Production mode with verbose output
     $0 --min-uptime 4 --dry-run                    # Test with 4-hour minimum uptime
     $0 --threshold 50 --dry-run                    # Test reboot logic when tracked <= 50
     $0 --threshold 200 --dry-run --verbose         # Test with high threshold to trigger reboot
     $0 --max-log-size 5 --max-log-files 3          # Rotate logs at 5MB, keep 3 files
     $0 --service-name piaware --endpoint auto --dry-run  # Auto-detect for PiAware feeder
+
+CACHE BEHAVIOR:
+    - First run with 'auto' will detect and cache the endpoint
+    - Subsequent runs will use the cached endpoint (much faster)
+    - If cached endpoint becomes unresponsive, automatic re-detection occurs
+    - Use --clear-cache to force re-detection
+    - Use --show-config to view cached settings
 
 EOF
 }
@@ -494,8 +507,27 @@ build_endpoint_url() {
         return 0
     fi
     
-    # If user provided 'auto' or default endpoint, try to detect port
+    # If user provided 'auto' or default endpoint, try cached config first
     if [[ "$provided_endpoint" == "auto" ]] || [[ "$provided_endpoint" == "$DEFAULT_ENDPOINT" ]]; then
+        
+        # Try to load cached endpoint first
+        local cached_endpoint
+        if cached_endpoint=$(load_endpoint_config); then
+            
+            # Verify the cached endpoint still works
+            log_message "INFO" "Verifying cached endpoint is still responsive..." >&2
+            if curl -s --connect-timeout 5 --max-time 10 "$cached_endpoint" >/dev/null 2>&1; then
+                log_message "SUCCESS" "Cached endpoint verified and responsive: $cached_endpoint" >&2
+                echo "$cached_endpoint"
+                return 0
+            else
+                log_message "WARN" "Cached endpoint no longer responsive, will re-detect" >&2
+                clear_endpoint_config
+            fi
+        fi
+        
+        # No valid cached config, perform detection
+        log_message "INFO" "Performing endpoint auto-detection..." >&2
         local detected_port=$(detect_fr24_port "$service_name")
         local final_url="http://localhost:$detected_port/monitor.json"
         
@@ -504,6 +536,8 @@ build_endpoint_url() {
         # Verify the detected endpoint works
         if curl -s --connect-timeout 5 --max-time 10 "$final_url" >/dev/null 2>&1; then
             log_message "SUCCESS" "Verified auto-detected endpoint is responsive: $final_url" >&2
+            # Save successful detection to cache
+            save_endpoint_config "$final_url" "$service_name"
         else
             log_message "WARN" "Auto-detected endpoint not responsive, you may need to specify --endpoint manually" >&2
         fi
@@ -515,6 +549,85 @@ build_endpoint_url() {
     # Fallback: treat as hostname or IP
     echo "http://$provided_endpoint/monitor.json"
     return 0
+}
+
+# Function to save endpoint configuration
+save_endpoint_config() {
+    local endpoint="$1"
+    local service_name="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    log_message "INFO" "Saving endpoint configuration to $CONFIG_FILE" >&2
+    
+    cat > "$CONFIG_FILE" << EOF
+# FR24 Monitor Configuration File
+# Auto-generated on $timestamp
+# This file caches the detected endpoint to avoid re-detection on every run
+
+FR24_ENDPOINT="$endpoint"
+FR24_SERVICE_NAME="$service_name"
+DETECTION_DATE="$timestamp"
+EOF
+    
+    log_message "SUCCESS" "Endpoint configuration saved: $endpoint" >&2
+}
+
+# Function to load endpoint configuration
+load_endpoint_config() {
+    if [[ -r "$CONFIG_FILE" ]]; then
+        log_message "INFO" "Loading cached endpoint configuration from $CONFIG_FILE" >&2
+        
+        # Source the config file safely
+        local cached_endpoint=""
+        local cached_service=""
+        local detection_date=""
+        
+        # Parse config file manually for safety
+        while IFS='=' read -r key value; do
+            # Skip comments and empty lines
+            [[ "$key" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "$key" ]] && continue
+            
+            # Remove quotes from value
+            value=$(echo "$value" | sed 's/^"//; s/"$//')
+            
+            case "$key" in
+                "FR24_ENDPOINT")
+                    cached_endpoint="$value"
+                    ;;
+                "FR24_SERVICE_NAME") 
+                    cached_service="$value"
+                    ;;
+                "DETECTION_DATE")
+                    detection_date="$value"
+                    ;;
+            esac
+        done < "$CONFIG_FILE"
+        
+        if [[ -n "$cached_endpoint" ]] && [[ "$cached_endpoint" =~ ^https?:// ]]; then
+            log_message "SUCCESS" "Using cached endpoint: $cached_endpoint (detected: $detection_date)" >&2
+            echo "$cached_endpoint"
+            return 0
+        else
+            log_message "WARN" "Invalid cached endpoint configuration, will re-detect" >&2
+            return 1
+        fi
+    else
+        log_message "INFO" "No cached endpoint configuration found, will detect" >&2
+        return 1
+    fi
+}
+
+# Function to clear endpoint configuration (for troubleshooting)
+clear_endpoint_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        rm -f "$CONFIG_FILE"
+        log_message "INFO" "Cleared cached endpoint configuration" >&2
+        return 0
+    else
+        log_message "INFO" "No cached configuration to clear" >&2
+        return 1
+    fi
 }
 
 # Main monitoring function
@@ -564,6 +677,8 @@ monitor_fr24() {
 
 # Parse command line arguments
 ENDPOINT="auto"  # Changed to auto-detect by default
+CLEAR_CACHE=false
+SHOW_CONFIG=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -603,6 +718,14 @@ while [[ $# -gt 0 ]]; do
             FR24_SERVICE_NAME="$2"
             shift 2
             ;;
+        --clear-cache)
+            CLEAR_CACHE=true
+            shift
+            ;;
+        --show-config)
+            SHOW_CONFIG=true
+            shift
+            ;;
         --help)
             usage
             exit 0
@@ -614,6 +737,37 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Handle config-only operations first
+if [[ "$SHOW_CONFIG" == "true" ]]; then
+    echo "FR24 Monitor Configuration"
+    echo "=========================="
+    echo "Config file: $CONFIG_FILE"
+    echo
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo "Cached configuration:"
+        cat "$CONFIG_FILE"
+        echo
+        echo "Configuration status: Active"
+    else
+        echo "No cached configuration found."
+        echo "Configuration status: Not configured (will auto-detect on first run)"
+    fi
+    exit 0
+fi
+
+if [[ "$CLEAR_CACHE" == "true" ]]; then
+    echo "Clearing cached endpoint configuration..."
+    if clear_endpoint_config; then
+        echo "Cache cleared. Next run will perform fresh endpoint detection."
+    fi
+    
+    # If we're only clearing cache, exit here unless other operations requested
+    if [[ "$DRY_RUN" == "false" ]] && [[ "$ENDPOINT" == "auto" ]]; then
+        echo "Use --dry-run to test endpoint detection after cache clear."
+        exit 0
+    fi
+fi
 
 # Build the final endpoint URL with auto-detection if needed
 FINAL_ENDPOINT=$(build_endpoint_url "$ENDPOINT" "$FR24_SERVICE_NAME")
@@ -660,6 +814,13 @@ main() {
     local log_dir=$(dirname "$LOG_FILE")
     if [[ ! -d "$log_dir" ]] && [[ -w "$(dirname "$log_dir")" ]]; then
         mkdir -p "$log_dir"
+    fi
+    
+    # Load cached configuration if available
+    if ! FINAL_ENDPOINT=$(load_endpoint_config); then
+        # If loading cached config failed, detect endpoint and save config
+        FINAL_ENDPOINT=$(build_endpoint_url "$ENDPOINT" "$FR24_SERVICE_NAME")
+        save_endpoint_config "$FINAL_ENDPOINT" "$FR24_SERVICE_NAME"
     fi
     
     # Run monitoring
