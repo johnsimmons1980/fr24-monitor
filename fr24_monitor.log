@@ -1,9 +1,0 @@
-[2025-07-08 15:30:51] [INFO] Starting FR24 monitoring check
-[2025-07-08 15:30:51] [INFO] Current system uptime: 5 hours
-[2025-07-08 15:30:51] [INFO] Fetching data from: http://localhost:8754/monitor.json
-[2025-07-08 15:30:51] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
-[2025-07-08 15:30:51] [WARN] Endpoint unavailable - attempting to restart FR24 service
-[2025-07-08 15:30:51] [INFO] Attempting to restart FR24 service: fr24feed
-[2025-07-08 15:30:51] [INFO] DRY RUN: Would restart service now
-[2025-07-08 15:30:51] [INFO] DRY RUN: Command that would be executed: sudo systemctl restart fr24feed
-[2025-07-08 15:30:51] [INFO] Service restarted, waiting 30 seconds before retry...

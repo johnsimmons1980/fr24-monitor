@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# FR24 Monitor Crontab Management Script
-# Usage: ./install_cron.sh [install|uninstall|status|edit]
+# FR24 Monitor Management Script
+# Usage: ./fr24_manager.sh [install|uninstall|status|edit|test|preview|help]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRON_FILE="$SCRIPT_DIR/fr24_monitor.cron"
@@ -130,6 +130,13 @@ install_cron() {
         print_status "SUCCESS" "FR24 monitor crontab installed successfully"
         print_status "INFO" "The monitor will run every 10 minutes"
         print_status "INFO" "Check logs at: $log_file"
+        
+        # Create the log file if it doesn't exist
+        if [[ ! -f "$log_file" ]]; then
+            touch "$log_file"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] FR24 monitoring system installed" >> "$log_file"
+            print_status "INFO" "Created log file: $log_file"
+        fi
         
         # Also install logrotate configuration
         print_status "INFO" "Installing logrotate configuration..."
@@ -379,33 +386,37 @@ main() {
         "help"|*)
             local log_file=$(get_log_file_path)
             cat << EOF
-FR24 Monitor Installation & Management
+FR24 Monitor Management Tool
 
 Usage: $0 [command]
 
-Commands:
+DESCRIPTION:
+    Complete management tool for the FR24 monitoring system. Handles installation,
+    configuration, testing, monitoring, and removal of all components.
+
+COMMANDS:
     install     Install FR24 monitor crontab and logrotate configuration
     uninstall   Remove FR24 monitor from crontab and remove logrotate config
-    status      Show current crontab status, log info, and logrotate status
+    status      Show current system status, cron jobs, logs, and logrotate config
     edit        Edit crontab manually
     test        Test the monitor script in dry-run mode
     preview     Show the cron and logrotate entries that would be installed
     help        Show this help message
 
-Examples:
+EXAMPLES:
     $0 preview      # Preview what will be installed
-    $0 install      # Install cron job and logrotate config
-    $0 status       # Check if it's running
-    $0 test         # Test the script
-    $0 uninstall    # Remove cron job and logrotate config
+    $0 install      # Install complete monitoring system
+    $0 status       # Check if monitoring is running
+    $0 test         # Test the monitoring script safely
+    $0 uninstall    # Remove complete monitoring system
 
-Files:
+FILES:
     Monitor script: $MONITOR_SCRIPT
     Cron template:  $CRON_FILE
     Logrotate template: $LOGROTATE_FILE
     Log file:       $log_file
 
-Installation locations:
+INSTALLATION LOCATIONS:
     Cron entries: User's crontab
     Logrotate config: $LOGROTATE_DEST
 
