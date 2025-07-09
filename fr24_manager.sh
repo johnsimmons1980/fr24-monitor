@@ -1197,10 +1197,25 @@ start_webserver() {
         while [[ $attempts -lt $max_attempts ]]; do
             # Check if process is still running
             if ps -p "$pid" > /dev/null 2>&1; then
-                # Check if port is being used
-                if netstat -tlnp 2>/dev/null | grep -q ":$WEB_PORT.*$pid"; then
+                # Check if port is being used (multiple methods)
+                if netstat -tln 2>/dev/null | grep -q ":$WEB_PORT " || \
+                   ss -tln 2>/dev/null | grep -q ":$WEB_PORT " || \
+                   lsof -i ":$WEB_PORT" 2>/dev/null | grep -q "$pid"; then
                     server_started=true
                     break
+                fi
+                
+                # Also try a simple HTTP check to localhost
+                if command -v curl >/dev/null 2>&1; then
+                    if curl -s -o /dev/null --connect-timeout 1 "http://localhost:$WEB_PORT" 2>/dev/null; then
+                        server_started=true
+                        break
+                    fi
+                elif command -v wget >/dev/null 2>&1; then
+                    if wget -q -O /dev/null --timeout=1 "http://localhost:$WEB_PORT" 2>/dev/null; then
+                        server_started=true
+                        break
+                    fi
                 fi
             fi
             
