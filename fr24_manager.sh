@@ -1134,7 +1134,7 @@ if (file_exists($dbFile)) {
             SELECT timestamp, tracked_aircraft, uploaded_aircraft, endpoint, feed_status
             FROM monitoring_stats 
             ORDER BY timestamp DESC 
-            LIMIT 50
+            LIMIT 100
         ")->fetchAll();
     } catch (PDOException $e) {
         // Ignore database errors in logs view
@@ -1158,30 +1158,32 @@ if (file_exists($dbFile)) {
 
         <div class="table-container">
             <div class="table-header">
-                <h3>💾 Database Monitoring History</h3>
+                <h3>💾 Database Monitoring History (Showing <?= count($dbLogs) ?> entries - scroll for more)</h3>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Tracked</th>
-                        <th>Uploaded</th>
-                        <th>Feed Status</th>
-                        <th>Endpoint</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($dbLogs as $log): ?>
+            <div style="max-height: 400px; overflow-y: auto;">
+                <table>
+                    <thead>
                         <tr>
-                            <td><?= formatDbTimestamp($log['timestamp']) ?></td>
-                            <td><?= $log['tracked_aircraft'] ?></td>
-                            <td><?= $log['uploaded_aircraft'] ?? 'N/A' ?></td>
-                            <td><?= htmlspecialchars($log['feed_status'] ?? 'Unknown') ?></td>
-                            <td><?= htmlspecialchars(parse_url($log['endpoint'], PHP_URL_HOST) . ':' . parse_url($log['endpoint'], PHP_URL_PORT)) ?></td>
+                            <th>Timestamp</th>
+                            <th>Tracked</th>
+                            <th>Uploaded</th>
+                            <th>Feed Status</th>
+                            <th>Endpoint</th>
                         </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($dbLogs as $log): ?>
+                            <tr>
+                                <td><?= formatDbTimestamp($log['timestamp']) ?></td>
+                                <td><?= $log['tracked_aircraft'] ?></td>
+                                <td><?= $log['uploaded_aircraft'] ?? 'N/A' ?></td>
+                                <td><?= htmlspecialchars($log['feed_status'] ?? 'Unknown') ?></td>
+                                <td><?= htmlspecialchars(parse_url($log['endpoint'], PHP_URL_HOST) . ':' . parse_url($log['endpoint'], PHP_URL_PORT)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="table-container">
