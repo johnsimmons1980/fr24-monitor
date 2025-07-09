@@ -81,6 +81,13 @@ $monitoringTrend = $pdo->query("
         </div>
 
         <?php if ($latestMonitoring): ?>
+            <!-- Debug: Variable check -->
+            <?php 
+            // Debug output (remove after testing)
+            error_log("DEBUG: rebootsThisMonth = " . $rebootsThisMonth);
+            error_log("DEBUG: rebootsThisYear = " . $rebootsThisYear);
+            ?>
+            
             <div class="stats-grid">
                 <div class="stat-card primary">
                     <div class="stat-value"><?= $latestMonitoring['tracked_aircraft'] ?? 'N/A' ?></div>
@@ -92,18 +99,18 @@ $monitoringTrend = $pdo->query("
                     <div class="stat-label">Reboots Today</div>
                 </div>
                 
-                <div class="stat-card">
+                <div class="stat-card info">
                     <div class="stat-value"><?= $rebootsThisWeek ?></div>
                     <div class="stat-label">Reboots This Week</div>
                 </div>
                 
                 <div class="stat-card <?= $rebootsThisMonth > 3 ? 'warning' : 'info' ?>">
-                    <div class="stat-value"><?= $rebootsThisMonth ?></div>
+                    <div class="stat-value"><?= $rebootsThisMonth ?? '0' ?></div>
                     <div class="stat-label">Reboots This Month</div>
                 </div>
                 
                 <div class="stat-card <?= $rebootsThisYear > 20 ? 'warning' : 'info' ?>">
-                    <div class="stat-value"><?= $rebootsThisYear ?></div>
+                    <div class="stat-value"><?= $rebootsThisYear ?? '0' ?></div>
                     <div class="stat-label">Reboots This Year</div>
                 </div>
                 

@@ -38,14 +38,14 @@ body {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1.2rem;
     margin-bottom: 2rem;
 }
 
 @media (min-width: 768px) {
     .stats-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     }
 }
 
@@ -172,11 +172,14 @@ tr:hover {
 }
 
 .reason-cell {
-    max-width: 300px;
+    max-width: 350px;
+    min-width: 200px;
     word-wrap: break-word;
     word-break: break-word;
     white-space: normal;
     line-height: 1.4;
+    padding: 0.75rem 0.5rem;
+    vertical-align: top;
 }
 
 .refresh-info {

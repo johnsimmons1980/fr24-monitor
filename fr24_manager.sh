@@ -1181,25 +1181,48 @@ start_webserver() {
     fi
     
     # Start lighttpd in background
-    if lighttpd -f "$LIGHTTPD_CONFIG" 2>/dev/null & then
+    print_status "INFO" "Attempting to start lighttpd..."
+    if lighttpd -f "$LIGHTTPD_CONFIG" 2>"$SCRIPT_DIR/lighttpd_error.log" & then
         local pid=$!
         echo "$pid" > "$SCRIPT_DIR/lighttpd.pid"
         
-        # Wait a moment and check if it started successfully
-        sleep 3
-        if ps -p "$pid" > /dev/null 2>&1; then
+        # Wait a moment for startup
+        sleep 2
+        
+        # Check multiple ways to verify startup
+        local attempts=0
+        local max_attempts=10
+        local server_started=false
+        
+        while [[ $attempts -lt $max_attempts ]]; do
+            # Check if process is still running
+            if ps -p "$pid" > /dev/null 2>&1; then
+                # Check if port is being used
+                if netstat -tlnp 2>/dev/null | grep -q ":$WEB_PORT.*$pid"; then
+                    server_started=true
+                    break
+                fi
+            fi
+            
+            sleep 1
+            ((attempts++))
+        done
+        
+        if [[ "$server_started" == "true" ]]; then
             print_status "SUCCESS" "Web server started successfully (PID: $pid)"
             print_status "INFO" "Dashboard available at: http://localhost:$WEB_PORT"
             return 0
         else
-            print_status "ERROR" "Web server failed to start"
+            print_status "ERROR" "Web server failed to start properly"
             if [[ -f "$SCRIPT_DIR/lighttpd_error.log" ]]; then
                 print_status "ERROR" "Check error log: $SCRIPT_DIR/lighttpd_error.log"
+                print_status "INFO" "Recent error log entries:"
+                tail -5 "$SCRIPT_DIR/lighttpd_error.log" | sed 's/^/  /'
             fi
             return 1
         fi
     else
-        print_status "ERROR" "Failed to start web server"
+        print_status "ERROR" "Failed to start lighttpd process"
         return 1
     fi
 }
@@ -1207,20 +1230,40 @@ start_webserver() {
 # Function to stop web server
 stop_webserver() {
     local pid_file="$SCRIPT_DIR/lighttpd.pid"
+    local stopped=false
     
+    # First try to stop using PID file
     if [[ -f "$pid_file" ]]; then
         local pid=$(cat "$pid_file")
         if ps -p "$pid" > /dev/null 2>&1; then
             print_status "INFO" "Stopping web server (PID: $pid)..."
             kill "$pid"
-            rm -f "$pid_file"
-            print_status "SUCCESS" "Web server stopped"
-        else
-            print_status "INFO" "Web server not running"
-            rm -f "$pid_file"
+            sleep 2
+            
+            # Verify it stopped
+            if ! ps -p "$pid" > /dev/null 2>&1; then
+                stopped=true
+                print_status "SUCCESS" "Web server stopped"
+            fi
         fi
-    else
-        print_status "INFO" "Web server PID file not found"
+        rm -f "$pid_file"
+    fi
+    
+    # If not stopped yet, look for any lighttpd processes using our config
+    if [[ "$stopped" == "false" ]]; then
+        local running_pids=$(ps aux | grep "[l]ighttpd.*$SCRIPT_DIR" | awk '{print $2}')
+        if [[ -n "$running_pids" ]]; then
+            print_status "INFO" "Found running lighttpd processes, stopping them..."
+            for pid in $running_pids; do
+                print_status "INFO" "Stopping lighttpd process (PID: $pid)..."
+                kill "$pid" 2>/dev/null
+            done
+            sleep 2
+            stopped=true
+            print_status "SUCCESS" "Web server processes stopped"
+        else
+            print_status "INFO" "No web server processes found running"
+        fi
     fi
 }
 
