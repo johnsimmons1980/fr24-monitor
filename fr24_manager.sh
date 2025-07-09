@@ -878,8 +878,9 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
 function formatDbTimestamp($timestamp) {
     if (empty($timestamp)) return 'N/A';
     
-    // Create DateTime object and set timezone
-    $dt = new DateTime($timestamp);
+    // Create DateTime object in UTC (SQLite CURRENT_TIMESTAMP is always UTC)
+    $dt = new DateTime($timestamp, new DateTimeZone('UTC'));
+    // Convert to local timezone
     $dt->setTimezone(new DateTimeZone(date_default_timezone_get()));
     
     return $dt->format('d/m/Y H:i:s');
@@ -1107,8 +1108,9 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
 function formatDbTimestamp($timestamp) {
     if (empty($timestamp)) return 'N/A';
     
-    // Create DateTime object and set timezone
-    $dt = new DateTime($timestamp);
+    // Create DateTime object in UTC (SQLite CURRENT_TIMESTAMP is always UTC)
+    $dt = new DateTime($timestamp, new DateTimeZone('UTC'));
+    // Convert to local timezone
     $dt->setTimezone(new DateTimeZone(date_default_timezone_get()));
     
     return $dt->format('d/m/Y H:i:s');
