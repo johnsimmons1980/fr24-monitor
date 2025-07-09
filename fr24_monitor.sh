@@ -358,10 +358,40 @@ reboot_server() {
     if [[ "$DRY_RUN" == "true" ]]; then
         log_message "INFO" "DRY RUN: Would reboot server now (uptime check passed: $uptime_hours >= $MINIMUM_UPTIME_HOURS hours)"
         log_message "INFO" "DRY RUN: Command that would be executed: sudo reboot"
+        
+        # Test email alert in dry run mode
+        local email_subject="FR24 Monitor Alert: System Reboot Would Be Initiated (DRY RUN)"
+        local email_message=$(create_reboot_email_message "DRY RUN - $reason" "$tracked" "$TRACKED_THRESHOLD" "$uptime_hours" "$endpoint")
+        email_message="*** THIS IS A DRY RUN TEST - NO ACTUAL REBOOT WILL OCCUR ***
+
+$email_message
+
+This is a test of the email alert system. In a real scenario, the system would be rebooted now."
+        
+        log_message "INFO" "Testing email alert system..."
+        if send_email_alert "$email_subject" "$email_message"; then
+            log_message "SUCCESS" "DRY RUN: Email alert test completed successfully"
+        else
+            log_message "WARN" "DRY RUN: Email alert test failed"
+        fi
+        
         return 0
     fi
     
     log_message "REBOOT" "Initiating server reboot..."
+    
+    # Send email alert before rebooting (only if not dry run)
+    if [[ "$DRY_RUN" == "false" ]]; then
+        local email_subject="FR24 Monitor Alert: System Reboot Initiated"
+        local email_message=$(create_reboot_email_message "$reason" "$tracked" "$TRACKED_THRESHOLD" "$uptime_hours" "$endpoint")
+        
+        log_message "INFO" "Sending reboot alert email..."
+        if send_email_alert "$email_subject" "$email_message"; then
+            log_message "INFO" "Email alert sent successfully"
+        else
+            log_message "WARN" "Failed to send email alert, but continuing with reboot"
+        fi
+    fi
     
     # Check if we have reboot permissions
     if ! sudo -n reboot &>/dev/null; then
@@ -369,8 +399,8 @@ reboot_server() {
         return 1
     fi
     
-    # Give a short delay for logging to complete
-    sleep 2
+    # Give a short delay for logging and email to complete
+    sleep 3
     sudo reboot
 }
 
@@ -580,6 +610,79 @@ log_monitoring_result() {
     local sql="INSERT INTO system_status (check_status, tracked_aircraft, threshold, uptime_hours) VALUES ('$check_status', $tracked, $threshold, $uptime_hours);"
     
     log_to_database "system_status" "$sql"
+}
+
+# Email configuration and helper functions
+EMAIL_CONFIG_FILE="$SCRIPT_DIR/email_config.json"
+EMAIL_HELPER_SCRIPT="$SCRIPT_DIR/send_email.sh"
+
+# Function to send email alert for reboot events
+send_email_alert() {
+    local subject="$1"
+    local message="$2"
+    
+    # Check if email helper script exists
+    if [[ ! -f "$EMAIL_HELPER_SCRIPT" ]]; then
+        log_message "WARN" "Email helper script not found: $EMAIL_HELPER_SCRIPT"
+        return 1
+    fi
+    
+    # Check if email helper script is executable
+    if [[ ! -x "$EMAIL_HELPER_SCRIPT" ]]; then
+        log_message "INFO" "Making email helper script executable..."
+        chmod +x "$EMAIL_HELPER_SCRIPT" 2>/dev/null || {
+            log_message "WARN" "Could not make email helper script executable"
+            return 1
+        }
+    fi
+    
+    # Try to send email using the helper script
+    log_message "INFO" "Attempting to send email alert..."
+    local email_output
+    if email_output=$(bash "$EMAIL_HELPER_SCRIPT" "$subject" "$message" 2>&1); then
+        log_message "SUCCESS" "Email alert sent successfully"
+        return 0
+    else
+        log_message "WARN" "Failed to send email alert: $email_output"
+        return 1
+    fi
+}
+
+# Function to create a detailed reboot email message
+create_reboot_email_message() {
+    local reason="$1"
+    local tracked="${2:-0}"
+    local threshold="${3:-0}"
+    local uptime_hours="${4:-0}"
+    local endpoint="${5:-unknown}"
+    
+    local hostname=$(hostname)
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    local system_load=$(uptime | awk -F'load average:' '{print $2}' | xargs)
+    
+    cat << EOF
+FR24 Monitor System Alert
+
+SYSTEM REBOOT INITIATED
+
+Timestamp: $timestamp
+Hostname: $hostname
+Reason: $reason
+
+MONITORING DETAILS:
+- Aircraft Tracked: $tracked
+- Alert Threshold: $threshold
+- System Uptime: $uptime_hours hours
+- Monitoring Endpoint: $endpoint
+
+SYSTEM INFORMATION:
+- System Load: $system_load
+- Timezone: $(date '+%Z %z')
+
+The FR24 monitoring system has detected that aircraft tracking has dropped below the configured threshold and has initiated a system reboot to restore service.
+
+This is an automated alert from the FR24 Monitor system.
+EOF
 }
 
 # Main monitoring function

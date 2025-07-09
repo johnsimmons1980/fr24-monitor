@@ -1079,7 +1079,10 @@ $monitoringTrend = $pdo->query("
 
         <div class="refresh-info">
             <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s T') ?></p>
-            <p><a href="logs.php" class="btn">View Detailed Logs</a></p>
+            <p>
+                <a href="logs.php" class="btn">View Detailed Logs</a>
+                <a href="config.php" class="btn" style="background: #9f7aea; margin-left: 0.5rem;">Email Configuration</a>
+            </p>
             <p style="font-size: 0.8rem; color: #718096;">PHP Timezone: <?= date_default_timezone_get() ?> | System TZ: <?= $systemTimezone ?? 'Unknown' ?></p>
         </div>
     </div>
@@ -1201,7 +1204,502 @@ if (file_exists($dbFile)) {
 </html>
 EOF
 
+    # Create configuration page PHP file
+    cat > "$WEB_DIR/config.php" << 'EOF'
+<?php
+// Set timezone to match system timezone
+$systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
+if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
+    try {
+        date_default_timezone_set($systemTimezone);
+    } catch (Exception $e) {
+        date_default_timezone_set('Europe/London');
+    }
+} else {
+    date_default_timezone_set('Europe/London');
+}
+
+$configFile = dirname(__DIR__) . '/email_config.json';
+$message = '';
+$messageType = '';
+
+// Handle form submission
+if ($_POST) {
+    $config = [
+        'enabled' => isset($_POST['enabled']) ? true : false,
+        'smtp_host' => $_POST['smtp_host'] ?? '',
+        'smtp_port' => intval($_POST['smtp_port'] ?? 587),
+        'use_tls' => $_POST['smtp_security'] === 'tls',
+        'use_starttls' => $_POST['smtp_security'] === 'tls',
+        'smtp_user' => $_POST['smtp_username'] ?? '',
+        'smtp_password' => $_POST['smtp_password'] ?? '',
+        'from_email' => $_POST['from_email'] ?? '',
+        'from_name' => $_POST['from_name'] ?? 'FR24 Monitor',
+        'to_email' => $_POST['to_email'] ?? '',
+        'subject' => $_POST['subject'] ?? 'FR24 Monitor Alert: System Reboot Required',
+        'smtp_security' => $_POST['smtp_security'] ?? 'tls'
+    ];
+    
+    if (file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT))) {
+        $message = 'Configuration saved successfully!';
+        $messageType = 'success';
+    } else {
+        $message = 'Failed to save configuration. Check file permissions.';
+        $messageType = 'error';
+    }
+}
+
+// Load existing configuration
+$config = [];
+if (file_exists($configFile)) {
+    $configData = file_get_contents($configFile);
+    if ($configData) {
+        $config = json_decode($configData, true) ?? [];
+    }
+}
+
+// Default values
+$config = array_merge([
+    'enabled' => false,
+    'smtp_host' => '',
+    'smtp_port' => 587,
+    'smtp_security' => 'tls',
+    'use_tls' => true,
+    'use_starttls' => true,
+    'smtp_user' => '',
+    'smtp_username' => '',
+    'smtp_password' => '',
+    'from_email' => '',
+    'from_name' => 'FR24 Monitor',
+    'to_email' => '',
+    'subject' => 'FR24 Monitor Alert: System Reboot Required'
+], $config);
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FR24 Monitor Configuration</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚙️ FR24 Monitor Configuration</h1>
+            <p>Configure email alerts for system reboot notifications</p>
+            <p><a href="index.php" class="btn">← Back to Dashboard</a></p>
+        </div>
+
+        <?php if ($message): ?>
+            <div class="alert alert-<?= $messageType ?>">
+                <?= htmlspecialchars($message) ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h3>📧 Email Alert Configuration</h3>
+            </div>
+            <form method="POST" style="padding: 2rem;">
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: flex; align-items: center; font-weight: 600; margin-bottom: 0.5rem;">
+                        <input type="checkbox" name="enabled" value="1" <?= $config['enabled'] ? 'checked' : '' ?> style="margin-right: 0.5rem;">
+                        Enable Email Alerts
+                    </label>
+                    <small style="color: #718096;">Send email notifications when the system requires a reboot</small>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">SMTP Server Host:</label>
+                    <input type="text" name="smtp_host" value="<?= htmlspecialchars($config['smtp_host']) ?>" 
+                           placeholder="e.g., smtp.gmail.com" 
+                           style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                    <small style="color: #718096;">SMTP server hostname or IP address</small>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                    <div>
+                        <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">SMTP Port:</label>
+                        <input type="number" name="smtp_port" value="<?= $config['smtp_port'] ?>" 
+                               placeholder="587" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                        <small style="color: #718096;">Usually 587 for TLS or 465 for SSL</small>
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Security:</label>
+                        <select name="smtp_security" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                            <option value="tls" <?= $config['smtp_security'] === 'tls' ? 'selected' : '' ?>>TLS</option>
+                            <option value="ssl" <?= $config['smtp_security'] === 'ssl' ? 'selected' : '' ?>>SSL</option>
+                            <option value="none" <?= $config['smtp_security'] === 'none' ? 'selected' : '' ?>>None</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">SMTP Username:</label>
+                    <input type="text" name="smtp_username" value="<?= htmlspecialchars($config['smtp_username']) ?>" 
+                           placeholder="your.email@example.com" 
+                           style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                    <small style="color: #718096;">Usually your email address</small>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">SMTP Password:</label>
+                    <input type="password" name="smtp_password" value="<?= htmlspecialchars($config['smtp_password']) ?>" 
+                           placeholder="Your email password or app password" 
+                           style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                    <small style="color: #718096;">For Gmail, use an App Password instead of your regular password</small>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                    <div>
+                        <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">From Email:</label>
+                        <input type="email" name="from_email" value="<?= htmlspecialchars($config['from_email']) ?>" 
+                               placeholder="monitor@example.com" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">From Name:</label>
+                        <input type="text" name="from_name" value="<?= htmlspecialchars($config['from_name']) ?>" 
+                               placeholder="FR24 Monitor" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">To Email:</label>
+                    <input type="email" name="to_email" value="<?= htmlspecialchars($config['to_email']) ?>" 
+                           placeholder="admin@example.com" 
+                           style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                    <small style="color: #718096;">Email address to receive alerts</small>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Email Subject:</label>
+                    <input type="text" name="subject" value="<?= htmlspecialchars($config['subject']) ?>" 
+                           placeholder="FR24 Monitor Alert: System Reboot Required" 
+                           style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 5px;">
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" class="btn" style="background: #38a169;">Save Configuration</button>
+                    <a href="test_email.php" class="btn" style="background: #3182ce;">Test Email</a>
+                </div>
+            </form>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h3>📝 Configuration Help</h3>
+            </div>
+            <div style="padding: 1.5rem;">
+                <h4 style="margin-bottom: 1rem; color: #2d3748;">Common SMTP Settings:</h4>
+                <ul style="margin-left: 1.5rem; margin-bottom: 1.5rem;">
+                    <li><strong>Gmail:</strong> smtp.gmail.com, Port 587, TLS (requires App Password)</li>
+                    <li><strong>Outlook/Hotmail:</strong> smtp-mail.outlook.com, Port 587, TLS</li>
+                    <li><strong>Yahoo:</strong> smtp.mail.yahoo.com, Port 587, TLS</li>
+                    <li><strong>ISP SMTP:</strong> Check with your internet provider</li>
+                </ul>
+                
+                <h4 style="margin-bottom: 1rem; color: #2d3748;">Gmail Setup:</h4>
+                <ol style="margin-left: 1.5rem;">
+                    <li>Enable 2-factor authentication on your Google account</li>
+                    <li>Go to Google Account settings → Security → App passwords</li>
+                    <li>Generate an App Password for "Mail"</li>
+                    <li>Use this App Password instead of your regular password</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+
+    # Create test email page
+    cat > "$WEB_DIR/test_email.php" << 'EOF'
+<?php
+// Set timezone to match system timezone
+$systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
+if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
+    try {
+        date_default_timezone_set($systemTimezone);
+    } catch (Exception $e) {
+        date_default_timezone_set('Europe/London');
+    }
+} else {
+    date_default_timezone_set('Europe/London');
+}
+
+$configFile = dirname(__DIR__) . '/email_config.json';
+$message = '';
+$messageType = '';
+
+if ($_POST && isset($_POST['test_email'])) {
+    // Load configuration
+    if (file_exists($configFile)) {
+        $configData = file_get_contents($configFile);
+        if ($configData) {
+            $config = json_decode($configData, true);
+            if ($config && $config['enabled']) {
+                // Use the send_email.sh script to send test email
+                $emailScript = dirname(__DIR__) . '/send_email.sh';
+                
+                if (file_exists($emailScript)) {
+                    $testSubject = "FR24 Monitor Test Email";
+                    $testMessage = "This is a test email to verify your FR24 Monitor email configuration is working correctly.
+
+Timestamp: " . date('Y-m-d H:i:s T') . "
+System: " . gethostname() . "
+Timezone: $systemTimezone
+
+If you received this email, your FR24 Monitor email alerts are configured properly and will be sent when the system requires a reboot.
+
+Configuration tested:
+- SMTP Server: " . $config['smtp_host'] . ":" . $config['smtp_port'] . "
+- From: " . $config['from_email'] . "
+- To: " . $config['to_email'] . "
+- Security: " . strtoupper($config['smtp_security'] ?? 'TLS') . "
+
+This is an automated test email from the FR24 Monitor system.";
+
+                    // Execute the email script
+                    $command = 'cd ' . escapeshellarg(dirname($emailScript)) . ' && ' . 
+                              escapeshellarg($emailScript) . ' ' . 
+                              escapeshellarg($testSubject) . ' ' . 
+                              escapeshellarg($testMessage) . ' 2>&1';
+                    
+                    $output = shell_exec($command);
+                    $exitCode = shell_exec('echo $?');
+                    
+                    if (trim($exitCode) === "0") {
+                        $message = "Test email sent successfully! Check your inbox at " . htmlspecialchars($config['to_email']);
+                        $messageType = 'success';
+                    } else {
+                        $message = "Failed to send test email. Error: " . htmlspecialchars($output);
+                        $messageType = 'error';
+                    }
+                } else {
+                    $message = "Email helper script not found. Please reinstall the system.";
+                    $messageType = 'error';
+                }
+            } else {
+                $message = "Email alerts are not enabled. Please enable them in the configuration.";
+                $messageType = 'error';
+            }
+        } else {
+            $message = "Failed to load email configuration.";
+            $messageType = 'error';
+        }
+    } else {
+        $message = "No email configuration found. Please configure email settings first.";
+        $messageType = 'error';
+    }
+}
+
+// Load existing configuration for display
+$config = [];
+if (file_exists($configFile)) {
+    $configData = file_get_contents($configFile);
+    if ($configData) {
+        $config = json_decode($configData, true) ?? [];
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Email - FR24 Monitor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📧 Test Email Configuration</h1>
+            <p>Send a test email to verify your configuration</p>
+            <p><a href="config.php" class="btn">← Back to Configuration</a></p>
+        </div>
+
+        <?php if ($message): ?>
+            <div class="alert alert-<?= $messageType ?>">
+                <?= $message ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h3>✉️ Send Test Email</h3>
+            </div>
+            <div style="padding: 2rem;">
+                <?php if (!empty($config) && $config['enabled']): ?>
+                    <p style="margin-bottom: 1.5rem;">Current configuration:</p>
+                    <ul style="margin-left: 1.5rem; margin-bottom: 2rem; color: #4a5568;">
+                        <li><strong>SMTP Server:</strong> <?= htmlspecialchars($config['smtp_host']) ?>:<?= $config['smtp_port'] ?></li>
+                        <li><strong>From:</strong> <?= htmlspecialchars($config['from_name']) ?> &lt;<?= htmlspecialchars($config['from_email']) ?>&gt;</li>
+                        <li><strong>To:</strong> <?= htmlspecialchars($config['to_email']) ?></li>
+                        <li><strong>Security:</strong> <?= strtoupper($config['smtp_security']) ?></li>
+                    </ul>
+                    
+                    <form method="POST">
+                        <button type="submit" name="test_email" value="1" class="btn" style="background: #3182ce;">
+                            Send Test Email
+                        </button>
+                    </form>
+                <?php else: ?>
+                    <div class="alert alert-warning">
+                        Email alerts are not configured or enabled. Please <a href="config.php">configure email settings</a> first.
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+
     print_status "SUCCESS" "Web dashboard files created successfully"
+    
+    # Create email helper script
+    cat > "$SCRIPT_DIR/send_email.sh" << 'EOF'
+#!/bin/bash
+
+# Email notification helper script for FR24 Monitor
+# Usage: ./send_email.sh "subject" "message"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/email_config.json"
+
+# Function to send email alert
+send_email_alert() {
+    local subject="$1"
+    local message="$2"
+    
+    # Check if config file exists
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "Email configuration file not found: $CONFIG_FILE"
+        return 1
+    fi
+    
+    # Check if jq is available for JSON parsing
+    if ! command -v jq &> /dev/null; then
+        echo "jq not found, installing..."
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y jq
+        else
+            echo "Could not install jq. Please install it manually."
+            return 1
+        fi
+    fi
+    
+    # Parse configuration
+    local enabled=$(jq -r '.enabled // false' "$CONFIG_FILE")
+    if [[ "$enabled" != "true" ]]; then
+        echo "Email alerts are disabled"
+        return 0
+    fi
+    
+    local smtp_host=$(jq -r '.smtp_host // ""' "$CONFIG_FILE")
+    local smtp_port=$(jq -r '.smtp_port // 587' "$CONFIG_FILE")
+    local smtp_security=$(jq -r '.smtp_security // "tls"' "$CONFIG_FILE")
+    local smtp_username=$(jq -r '.smtp_username // ""' "$CONFIG_FILE")
+    local smtp_password=$(jq -r '.smtp_password // ""' "$CONFIG_FILE")
+    local from_email=$(jq -r '.from_email // ""' "$CONFIG_FILE")
+    local from_name=$(jq -r '.from_name // "FR24 Monitor"' "$CONFIG_FILE")
+    local to_email=$(jq -r '.to_email // ""' "$CONFIG_FILE")
+    
+    # Validate required fields
+    if [[ -z "$smtp_host" || -z "$from_email" || -z "$to_email" ]]; then
+        echo "Missing required email configuration (smtp_host, from_email, or to_email)"
+        return 1
+    fi
+    
+    # Check if msmtp is available
+    if ! command -v msmtp &> /dev/null; then
+        echo "msmtp not found, installing..."
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y msmtp
+        else
+            echo "Could not install msmtp. Please install it manually."
+            return 1
+        fi
+    fi
+    
+    # Create temporary msmtp configuration
+    local msmtp_config=$(mktemp)
+    cat > "$msmtp_config" << MSMTP_EOF
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /tmp/msmtp.log
+
+account        fr24monitor
+host           $smtp_host
+port           $smtp_port
+from           $from_email
+user           $smtp_username
+password       $smtp_password
+MSMTP_EOF
+
+    # Adjust TLS settings based on security type
+    if [[ "$smtp_security" == "ssl" ]]; then
+        echo "tls_starttls   off" >> "$msmtp_config"
+    elif [[ "$smtp_security" == "none" ]]; then
+        echo "tls            off" >> "$msmtp_config"
+        echo "auth           off" >> "$msmtp_config"
+    fi
+    
+    echo "" >> "$msmtp_config"
+    echo "account default : fr24monitor" >> "$msmtp_config"
+    
+    # Create email message
+    local email_content=$(cat << EMAIL_EOF
+To: $to_email
+From: $from_name <$from_email>
+Subject: $subject
+Date: $(date -R)
+Content-Type: text/plain; charset=UTF-8
+
+$message
+
+---
+This message was sent automatically by the FR24 Monitor system.
+Hostname: $(hostname)
+Timestamp: $(date)
+EMAIL_EOF
+)
+    
+    # Send email
+    if echo "$email_content" | msmtp -C "$msmtp_config" "$to_email"; then
+        echo "Email sent successfully to $to_email"
+        rm -f "$msmtp_config"
+        return 0
+    else
+        echo "Failed to send email. Check /tmp/msmtp.log for details."
+        rm -f "$msmtp_config"
+        return 1
+    fi
+}
+
+# If script is called directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    if [[ $# -lt 2 ]]; then
+        echo "Usage: $0 \"subject\" \"message\""
+        exit 1
+    fi
+    
+    send_email_alert "$1" "$2"
+fi
+EOF
+
+    chmod +x "$SCRIPT_DIR/send_email.sh"
+    
     return 0
 }
 
