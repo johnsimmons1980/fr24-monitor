@@ -154,7 +154,7 @@ install_cron() {
         
         # Run the monitor script once to populate the log immediately
         print_status "INFO" "Running monitor script once to populate log file..."
-        if bash "$MONITOR_SCRIPT" --dry-run >/dev/null 2>&1; then
+        if bash "$MONITOR_SCRIPT" >/dev/null 2>&1; then
             print_status "SUCCESS" "Monitor script executed successfully - log file populated"
             print_status "INFO" "You can check the initial log entry with: tail -f $log_file"
         else
