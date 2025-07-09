@@ -4,11 +4,19 @@
 echo "🔍 FR24 Web Server Diagnostic"
 echo "=============================="
 
+# Check system time and timezone
+echo "0. System Time & Timezone..."
+echo "📅 Current system time: $(date)"
+echo "🌍 Timezone: $(timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo 'Unknown')"
+echo "🕐 UTC time: $(date -u)"
+
+echo ""
+
 # Check if the process is actually running
 echo "1. Checking if lighttpd process is running..."
-if ps aux | grep -q "[l]ighttpd.*fr24"; then
+if ps aux | grep -q "[l]ighttpd.*lighttpd.conf"; then
     echo "✅ Lighttpd process found:"
-    ps aux | grep "[l]ighttpd.*fr24"
+    ps aux | grep "[l]ighttpd.*lighttpd.conf"
 else
     echo "❌ No lighttpd process found running"
 fi
@@ -98,11 +106,48 @@ echo ""
 echo "8. Checking PHP FastCGI socket..."
 CURRENT_USER=$(whoami)
 SOCKET_PATH="/tmp/php.socket.$CURRENT_USER"
-if [[ -S "$SOCKET_PATH" ]]; then
-    echo "✅ PHP socket exists: $SOCKET_PATH"
+
+# Show what socket path the config expects
+EXPECTED_SOCKET=$(grep -o '"/tmp/php\.socket\.[^"]*"' lighttpd.conf 2>/dev/null | tr -d '"')
+if [[ -n "$EXPECTED_SOCKET" ]]; then
+    echo "📋 Config expects socket: $EXPECTED_SOCKET"
+    if [[ -S "$EXPECTED_SOCKET" ]]; then
+        echo "✅ Expected PHP socket exists: $EXPECTED_SOCKET"
+    else
+        echo "❌ Expected PHP socket missing: $EXPECTED_SOCKET"
+    fi
 else
-    echo "❌ PHP socket missing: $SOCKET_PATH"
-    echo "   This is likely why the web server can't serve PHP pages"
+    echo "⚠️  Could not find socket path in config"
+fi
+
+# Show all existing PHP sockets
+echo "📁 All PHP sockets in /tmp:"
+ls -la /tmp/php.socket.* 2>/dev/null || echo "   No PHP sockets found"
+
+# Check if php-cgi processes are running
+echo "🔍 PHP-CGI processes:"
+ps aux | grep -v grep | grep php-cgi || echo "   No php-cgi processes found"
+
+echo ""
+
+# Test if web dashboard is actually accessible
+echo "9. Testing web dashboard access..."
+if command -v curl >/dev/null 2>&1; then
+    echo "🌐 Testing HTTP access to dashboard..."
+    if curl -s -f "http://localhost:6869" >/dev/null 2>&1; then
+        echo "✅ Dashboard is accessible via HTTP"
+        
+        # Test if PHP is working
+        if curl -s "http://localhost:6869" | grep -q "FR24 Monitor Dashboard" 2>/dev/null; then
+            echo "✅ PHP is working - dashboard content loaded"
+        else
+            echo "⚠️  HTTP works but PHP may not be processing correctly"
+        fi
+    else
+        echo "❌ Cannot access dashboard via HTTP"
+    fi
+else
+    echo "⚠️  curl not available for testing"
 fi
 
 echo ""
