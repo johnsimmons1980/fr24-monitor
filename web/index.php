@@ -16,6 +16,17 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
     date_default_timezone_set('Europe/London');
 }
 
+// Function to properly format timestamps from database
+function formatDbTimestamp($timestamp) {
+    if (empty($timestamp)) return 'N/A';
+    
+    // Create DateTime object and set timezone
+    $dt = new DateTime($timestamp);
+    $dt->setTimezone(new DateTimeZone(date_default_timezone_get()));
+    
+    return $dt->format('d/m/Y H:i:s');
+}
+
 $dbFile = dirname(__DIR__) . '/fr24_monitor.db';
 
 // Check if database exists
@@ -129,7 +140,7 @@ $monitoringTrend = $pdo->query("
                 <table>
                     <tr>
                         <td><strong>Last Check:</strong></td>
-                        <td><?= date('d/m/Y H:i:s', strtotime($latestMonitoring['timestamp'])) ?></td>
+                        <td><?= formatDbTimestamp($latestMonitoring['timestamp']) ?></td>
                     </tr>
                     <tr>
                         <td><strong>Aircraft Tracked:</strong></td>
@@ -166,7 +177,7 @@ $monitoringTrend = $pdo->query("
                 <table>
                     <tr>
                         <td><strong>Time:</strong></td>
-                        <td><?= date('d/m/Y H:i:s', strtotime($lastReboot['timestamp'])) ?></td>
+                        <td><?= formatDbTimestamp($lastReboot['timestamp']) ?></td>
                     </tr>
                     <tr>
                         <td><strong>Reason:</strong></td>
@@ -195,7 +206,7 @@ $monitoringTrend = $pdo->query("
                     <tbody>
                         <?php foreach ($recentReboots as $reboot): ?>
                             <tr>
-                                <td><?= date('d/m/Y H:i:s', strtotime($reboot['timestamp'])) ?></td>
+                                <td><?= formatDbTimestamp($reboot['timestamp']) ?></td>
                                 <td><?= $reboot['tracked_aircraft'] ?></td>
                                 <td><?= $reboot['threshold'] ?></td>
                                 <td><?= $reboot['uptime_hours'] ?></td>

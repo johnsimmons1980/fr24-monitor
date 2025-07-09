@@ -13,6 +13,17 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
     date_default_timezone_set('Europe/London');
 }
 
+// Function to properly format timestamps from database
+function formatDbTimestamp($timestamp) {
+    if (empty($timestamp)) return 'N/A';
+    
+    // Create DateTime object and set timezone
+    $dt = new DateTime($timestamp);
+    $dt->setTimezone(new DateTimeZone(date_default_timezone_get()));
+    
+    return $dt->format('d/m/Y H:i:s');
+}
+
 $logFile = dirname(__DIR__) . '/fr24_monitor.log';
 $dbFile = dirname(__DIR__) . '/fr24_monitor.db';
 
@@ -70,7 +81,7 @@ if (file_exists($dbFile)) {
                 <tbody>
                     <?php foreach ($dbLogs as $log): ?>
                         <tr>
-                            <td><?= date('d/m/Y H:i:s', strtotime($log['timestamp'])) ?></td>
+                            <td><?= formatDbTimestamp($log['timestamp']) ?></td>
                             <td><?= $log['tracked_aircraft'] ?></td>
                             <td><?= $log['uploaded_aircraft'] ?? 'N/A' ?></td>
                             <td><?= htmlspecialchars($log['feed_status'] ?? 'Unknown') ?></td>
