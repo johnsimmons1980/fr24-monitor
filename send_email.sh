@@ -54,6 +54,7 @@ check_dependencies() {
     
     # Check for msmtp
     if ! command -v msmtp &> /dev/null; then
+        log_message "WARN" "msmtp not found, attempting to install..."
         missing_packages+=("msmtp")
     fi
     
@@ -147,6 +148,7 @@ auth           on
 tls            $(if [[ "$use_tls" == "true" ]]; then echo "on"; else echo "off"; fi)
 tls_starttls   $(if [[ "$use_starttls" == "true" ]]; then echo "on"; else echo "off"; fi)
 tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /tmp/msmtp.log
 
 # Account for FR24 Monitor
 account        fr24
@@ -163,7 +165,8 @@ EOF
     # Set proper permissions
     chmod 600 "$MSMTP_CONFIG"
     
-    log_message "SUCCESS" "msmtp configuration created"
+    log_message "SUCCESS" "msmtp configuration created at: $MSMTP_CONFIG"
+    log_message "INFO" "SMTP settings - Host: $smtp_host, Port: $smtp_port, User: $smtp_user, TLS: $use_tls"
 }
 
 # Function to send email
@@ -180,8 +183,9 @@ send_email() {
     local from_email=$(jq -r '.from_email' "$CONFIG_FILE")
     local from_name=$(jq -r '.from_name // "FR24 Monitor"' "$CONFIG_FILE")
     
-    log_message "INFO" "Sending email to: $recipient"
+    log_message "INFO" "Attempting to send email to: $recipient"
     log_message "INFO" "Subject: $subject"
+    log_message "INFO" "From: $from_name <$from_email>"
     
     # Create email content
     local email_content
@@ -201,11 +205,20 @@ EOF
 )
     
     # Send email using msmtp
-    if echo "$email_content" | msmtp "$recipient"; then
+    log_message "INFO" "Executing msmtp command..."
+    if echo "$email_content" | msmtp "$recipient" 2>&1; then
         log_message "SUCCESS" "Email sent successfully to $recipient"
         return 0
     else
-        log_message "ERROR" "Failed to send email to $recipient"
+        local msmtp_exit_code=$?
+        log_message "ERROR" "Failed to send email to $recipient (exit code: $msmtp_exit_code)"
+        
+        # Check msmtp log for more details
+        if [[ -f "/tmp/msmtp.log" ]]; then
+            log_message "ERROR" "msmtp log contents:"
+            cat "/tmp/msmtp.log" >&2
+        fi
+        
         return 1
     fi
 }
