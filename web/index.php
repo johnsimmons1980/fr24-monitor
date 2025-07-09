@@ -2,6 +2,22 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// Set timezone to match system timezone
+$systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
+if ($systemTimezone && $systemTimezone !== 'UTC') {
+    date_default_timezone_set($systemTimezone);
+} else {
+    // Fallback: try to detect timezone from system
+    $systemTZ = trim(shell_exec('date +%Z 2>/dev/null'));
+    if ($systemTZ === 'BST') {
+        date_default_timezone_set('Europe/London');
+    } elseif ($systemTZ === 'GMT') {
+        date_default_timezone_set('Europe/London');
+    } else {
+        date_default_timezone_set('UTC');
+    }
+}
+
 $dbFile = dirname(__DIR__) . '/fr24_monitor.db';
 
 // Check if database exists
@@ -21,6 +37,8 @@ $totalReboots = $pdo->query("SELECT COUNT(*) FROM reboot_events")->fetchColumn()
 $lastReboot = $pdo->query("SELECT timestamp, reason FROM reboot_events ORDER BY timestamp DESC LIMIT 1")->fetch();
 $rebootsToday = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE DATE(timestamp) = DATE('now')")->fetchColumn();
 $rebootsThisWeek = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE timestamp >= DATE('now', '-7 days')")->fetchColumn();
+$rebootsThisMonth = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')")->fetchColumn();
+$rebootsThisYear = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE strftime('%Y', timestamp) = strftime('%Y', 'now')")->fetchColumn();
 
 // Get latest monitoring data
 $latestMonitoring = $pdo->query("
@@ -66,14 +84,9 @@ $monitoringTrend = $pdo->query("
 
         <?php if ($latestMonitoring): ?>
             <div class="stats-grid">
-                <div class="stat-card">
+                <div class="stat-card primary">
                     <div class="stat-value"><?= $latestMonitoring['tracked_aircraft'] ?? 'N/A' ?></div>
                     <div class="stat-label">Aircraft Currently Tracked</div>
-                </div>
-                
-                <div class="stat-card">
-                    <div class="stat-value"><?= $totalReboots ?></div>
-                    <div class="stat-label">Total System Reboots</div>
                 </div>
                 
                 <div class="stat-card <?= $rebootsToday > 0 ? 'warning' : 'success' ?>">
@@ -84,6 +97,21 @@ $monitoringTrend = $pdo->query("
                 <div class="stat-card">
                     <div class="stat-value"><?= $rebootsThisWeek ?></div>
                     <div class="stat-label">Reboots This Week</div>
+                </div>
+                
+                <div class="stat-card <?= $rebootsThisMonth > 3 ? 'warning' : 'info' ?>">
+                    <div class="stat-value"><?= $rebootsThisMonth ?></div>
+                    <div class="stat-label">Reboots This Month</div>
+                </div>
+                
+                <div class="stat-card <?= $rebootsThisYear > 20 ? 'warning' : 'info' ?>">
+                    <div class="stat-value"><?= $rebootsThisYear ?></div>
+                    <div class="stat-label">Reboots This Year</div>
+                </div>
+                
+                <div class="stat-card secondary">
+                    <div class="stat-value"><?= $totalReboots ?></div>
+                    <div class="stat-label">Total System Reboots</div>
                 </div>
             </div>
         <?php endif; ?>
@@ -182,7 +210,7 @@ $monitoringTrend = $pdo->query("
         <?php endif; ?>
 
         <div class="refresh-info">
-            <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s') ?></p>
+            <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s T') ?></p>
             <p><a href="logs.php" class="btn">View Detailed Logs</a></p>
         </div>
     </div>

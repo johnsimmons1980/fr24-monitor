@@ -151,6 +151,19 @@ else
 fi
 
 echo ""
+
+# Check PHP timezone configuration
+echo "10. Checking PHP timezone configuration..."
+if command -v php >/dev/null 2>&1; then
+    echo "🕐 System timezone: $(timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo 'Unknown')"
+    echo "🕐 System time zone abbreviation: $(date +%Z)"
+    echo "🕐 PHP default timezone: $(php -r 'echo date_default_timezone_get();')"
+    echo "🕐 PHP current time: $(php -r 'echo date("d/m/Y H:i:s T");')"
+else
+    echo "⚠️  PHP CLI not available for testing"
+fi
+
+echo ""
 echo "🔧 Suggested fixes:"
 echo "1. If php-cgi is missing: sudo apt-get install php-cgi"
 echo "2. If config has errors: Check the lighttpd.conf file"
