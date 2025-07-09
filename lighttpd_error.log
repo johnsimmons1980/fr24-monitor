@@ -1,0 +1,2 @@
+2025-07-09 11:34:22: (server.c.1696) opening pid-file failed: /home/pi/fr24-monitor/lighttpd.pid: No such file or directory
+2025-07-09 11:34:22: (server.c.596) unlink failed for: /home/pi/fr24-monitor/lighttpd.pid: No such file or directory

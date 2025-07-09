@@ -722,6 +722,18 @@ body {
     border-left-color: #38a169;
 }
 
+.stat-card.primary {
+    border-left-color: #667eea;
+}
+
+.stat-card.secondary {
+    border-left-color: #9f7aea;
+}
+
+.stat-card.info {
+    border-left-color: #3182ce;
+}
+
 .stat-value {
     font-size: 2rem;
     font-weight: bold;
@@ -848,6 +860,31 @@ EOF
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// Set timezone to match system timezone
+$systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
+if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
+    try {
+        date_default_timezone_set($systemTimezone);
+    } catch (Exception $e) {
+        // Fallback if timezone is invalid
+        date_default_timezone_set('Europe/London');
+    }
+} else {
+    // Force Europe/London for UK systems
+    date_default_timezone_set('Europe/London');
+}
+
+// Function to properly format timestamps from database
+function formatDbTimestamp($timestamp) {
+    if (empty($timestamp)) return 'N/A';
+    
+    // Create DateTime object and set timezone
+    $dt = new DateTime($timestamp);
+    $dt->setTimezone(new DateTimeZone(date_default_timezone_get()));
+    
+    return $dt->format('d/m/Y H:i:s');
+}
+
 $dbFile = dirname(__DIR__) . '/fr24_monitor.db';
 
 // Check if database exists
@@ -867,6 +904,8 @@ $totalReboots = $pdo->query("SELECT COUNT(*) FROM reboot_events")->fetchColumn()
 $lastReboot = $pdo->query("SELECT timestamp, reason FROM reboot_events ORDER BY timestamp DESC LIMIT 1")->fetch();
 $rebootsToday = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE DATE(timestamp) = DATE('now')")->fetchColumn();
 $rebootsThisWeek = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE timestamp >= DATE('now', '-7 days')")->fetchColumn();
+$rebootsThisMonth = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')")->fetchColumn();
+$rebootsThisYear = $pdo->query("SELECT COUNT(*) FROM reboot_events WHERE strftime('%Y', timestamp) = strftime('%Y', 'now')")->fetchColumn();
 
 // Get latest monitoring data
 $latestMonitoring = $pdo->query("
@@ -912,14 +951,9 @@ $monitoringTrend = $pdo->query("
 
         <?php if ($latestMonitoring): ?>
             <div class="stats-grid">
-                <div class="stat-card">
+                <div class="stat-card primary">
                     <div class="stat-value"><?= $latestMonitoring['tracked_aircraft'] ?? 'N/A' ?></div>
                     <div class="stat-label">Aircraft Currently Tracked</div>
-                </div>
-                
-                <div class="stat-card">
-                    <div class="stat-value"><?= $totalReboots ?></div>
-                    <div class="stat-label">Total System Reboots</div>
                 </div>
                 
                 <div class="stat-card <?= $rebootsToday > 0 ? 'warning' : 'success' ?>">
@@ -927,9 +961,24 @@ $monitoringTrend = $pdo->query("
                     <div class="stat-label">Reboots Today</div>
                 </div>
                 
-                <div class="stat-card">
+                <div class="stat-card info">
                     <div class="stat-value"><?= $rebootsThisWeek ?></div>
                     <div class="stat-label">Reboots This Week</div>
+                </div>
+                
+                <div class="stat-card <?= $rebootsThisMonth > 3 ? 'warning' : 'info' ?>">
+                    <div class="stat-value"><?= $rebootsThisMonth ?? '0' ?></div>
+                    <div class="stat-label">Reboots This Month</div>
+                </div>
+                
+                <div class="stat-card <?= $rebootsThisYear > 20 ? 'warning' : 'info' ?>">
+                    <div class="stat-value"><?= $rebootsThisYear ?? '0' ?></div>
+                    <div class="stat-label">Reboots This Year</div>
+                </div>
+                
+                <div class="stat-card secondary">
+                    <div class="stat-value"><?= $totalReboots ?></div>
+                    <div class="stat-label">Total System Reboots</div>
                 </div>
             </div>
         <?php endif; ?>
@@ -942,7 +991,7 @@ $monitoringTrend = $pdo->query("
                 <table>
                     <tr>
                         <td><strong>Last Check:</strong></td>
-                        <td><?= date('d/m/Y H:i:s', strtotime($latestMonitoring['timestamp'])) ?></td>
+                        <td><?= formatDbTimestamp($latestMonitoring['timestamp']) ?></td>
                     </tr>
                     <tr>
                         <td><strong>Aircraft Tracked:</strong></td>
@@ -979,7 +1028,7 @@ $monitoringTrend = $pdo->query("
                 <table>
                     <tr>
                         <td><strong>Time:</strong></td>
-                        <td><?= date('d/m/Y H:i:s', strtotime($lastReboot['timestamp'])) ?></td>
+                        <td><?= formatDbTimestamp($lastReboot['timestamp']) ?></td>
                     </tr>
                     <tr>
                         <td><strong>Reason:</strong></td>
@@ -1008,7 +1057,7 @@ $monitoringTrend = $pdo->query("
                     <tbody>
                         <?php foreach ($recentReboots as $reboot): ?>
                             <tr>
-                                <td><?= date('d/m/Y H:i:s', strtotime($reboot['timestamp'])) ?></td>
+                                <td><?= formatDbTimestamp($reboot['timestamp']) ?></td>
                                 <td><?= $reboot['tracked_aircraft'] ?></td>
                                 <td><?= $reboot['threshold'] ?></td>
                                 <td><?= $reboot['uptime_hours'] ?></td>
@@ -1019,7 +1068,7 @@ $monitoringTrend = $pdo->query("
                                         <span class="status-indicator status-error"></span>Real
                                     <?php endif; ?>
                                 </td>
-                                <td><?= htmlspecialchars(substr($reboot['reason'], 0, 60)) ?><?= strlen($reboot['reason']) > 60 ? '...' : '' ?></td>
+                                <td style="word-wrap: break-word; white-space: normal; max-width: 200px;"><?= htmlspecialchars($reboot['reason']) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1028,8 +1077,9 @@ $monitoringTrend = $pdo->query("
         <?php endif; ?>
 
         <div class="refresh-info">
-            <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s') ?></p>
+            <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s T') ?></p>
             <p><a href="logs.php" class="btn">View Detailed Logs</a></p>
+            <p style="font-size: 0.8rem; color: #718096;">PHP Timezone: <?= date_default_timezone_get() ?> | System TZ: <?= $systemTimezone ?? 'Unknown' ?></p>
         </div>
     </div>
 </body>
@@ -1039,6 +1089,31 @@ EOF
     # Create logs viewer PHP file
     cat > "$WEB_DIR/logs.php" << 'EOF'
 <?php
+// Set timezone to match system timezone
+$systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
+if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
+    try {
+        date_default_timezone_set($systemTimezone);
+    } catch (Exception $e) {
+        // Fallback if timezone is invalid
+        date_default_timezone_set('Europe/London');
+    }
+} else {
+    // Force Europe/London for UK systems
+    date_default_timezone_set('Europe/London');
+}
+
+// Function to properly format timestamps from database
+function formatDbTimestamp($timestamp) {
+    if (empty($timestamp)) return 'N/A';
+    
+    // Create DateTime object and set timezone
+    $dt = new DateTime($timestamp);
+    $dt->setTimezone(new DateTimeZone(date_default_timezone_get()));
+    
+    return $dt->format('d/m/Y H:i:s');
+}
+
 $logFile = dirname(__DIR__) . '/fr24_monitor.log';
 $dbFile = dirname(__DIR__) . '/fr24_monitor.db';
 
@@ -1096,7 +1171,7 @@ if (file_exists($dbFile)) {
                 <tbody>
                     <?php foreach ($dbLogs as $log): ?>
                         <tr>
-                            <td><?= date('d/m/Y H:i:s', strtotime($log['timestamp'])) ?></td>
+                            <td><?= formatDbTimestamp($log['timestamp']) ?></td>
                             <td><?= $log['tracked_aircraft'] ?></td>
                             <td><?= $log['uploaded_aircraft'] ?? 'N/A' ?></td>
                             <td><?= htmlspecialchars($log['feed_status'] ?? 'Unknown') ?></td>

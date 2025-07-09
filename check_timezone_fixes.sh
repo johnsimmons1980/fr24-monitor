@@ -54,8 +54,8 @@ echo
 
 # Count old vs new timestamp functions
 echo "📊 Timestamp function usage analysis..."
-old_count=$(grep -ch "date.*strtotime" web/*.php 2>/dev/null | awk '{sum += $1} END {print sum+0}')
-new_count=$(grep -ch "formatDbTimestamp" web/*.php 2>/dev/null | awk '{sum += $1} END {print sum+0}')
+old_count=$(grep -c "date.*strtotime" web/*.php 2>/dev/null || echo "0")
+new_count=$(grep -c "formatDbTimestamp" web/*.php 2>/dev/null || echo "0")
 
 echo "Old date(strtotime()) usage: $old_count"
 echo "New formatDbTimestamp() usage: $new_count"

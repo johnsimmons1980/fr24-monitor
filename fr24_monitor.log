@@ -1,0 +1,144 @@
+[09/07/2025 09:40:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 09:40:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 09:40:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 09:40:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 09:40:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 09:40:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 09:40:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 09:40:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 09:40:01] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 09:40:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 09:40:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 09:40:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 09:50:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 09:50:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 09:50:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 09:50:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 09:50:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 09:50:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 09:50:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 09:50:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 09:50:01] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 09:50:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 09:50:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 09:50:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 10:00:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 10:00:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 10:00:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 10:00:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 10:00:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 10:00:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 10:00:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 10:00:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 10:00:01] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 10:00:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 10:00:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 10:00:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 10:10:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 10:10:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 10:10:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 10:10:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 10:10:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 10:10:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 10:10:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 10:10:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 10:10:01] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 10:10:01] [INFO] Available services matching 'fr24': 
+[09/07/2025 10:10:01] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 10:10:01] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 10:20:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 10:20:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 10:20:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 10:20:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 10:20:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 10:20:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 10:20:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 10:20:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 10:20:02] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 10:20:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 10:20:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 10:20:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 10:30:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 10:30:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 10:30:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 10:30:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 10:30:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 10:30:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 10:30:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 10:30:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 10:30:02] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 10:30:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 10:30:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 10:30:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 10:40:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 10:40:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 10:40:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 10:40:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 10:40:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 10:40:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 10:40:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 10:40:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 10:40:01] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 10:40:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 10:40:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 10:40:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 10:50:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 10:50:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 10:50:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 10:50:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 10:50:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 10:50:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 10:50:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 10:50:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 10:50:01] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 10:50:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 10:50:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 10:50:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 11:00:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 11:00:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 11:00:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 11:00:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 11:00:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 11:00:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 11:00:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 11:00:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 11:00:01] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 11:00:01] [INFO] Available services matching 'fr24': 
+[09/07/2025 11:00:01] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 11:00:01] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 11:10:02] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 11:10:02] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 11:10:02] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 11:10:02] [INFO] Starting FR24 monitoring check
+[09/07/2025 11:10:02] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 11:10:02] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 11:10:02] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 11:10:02] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 11:10:02] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 11:10:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 11:10:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 11:10:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 11:20:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 11:20:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 11:20:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 11:20:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 11:20:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 11:20:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 11:20:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 11:20:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 11:20:02] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 11:20:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 11:20:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 11:20:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
+[09/07/2025 11:30:01] [INFO] No cached endpoint configuration found, will detect
+[09/07/2025 11:30:01] [INFO] Using standard FR24 endpoint: http://localhost:8754/monitor.json
+[09/07/2025 11:30:01] [WARN] Standard FR24 endpoint not responsive, may need service restart
+[09/07/2025 11:30:01] [INFO] Starting FR24 monitoring check
+[09/07/2025 11:30:01] [INFO] Fetching data from: http://localhost:8754/monitor.json
+[09/07/2025 11:30:01] [ERROR] Failed to fetch data from http://localhost:8754/monitor.json
+[09/07/2025 11:30:01] [WARN] Endpoint unavailable - attempting to restart FR24 service
+[09/07/2025 11:30:01] [INFO] Attempting to restart FR24 service: fr24feed
+[09/07/2025 11:30:02] [ERROR] Service 'fr24feed' not found in systemctl
+[09/07/2025 11:30:02] [INFO] Available services matching 'fr24': 
+[09/07/2025 11:30:02] [ERROR] Service restart failed, endpoint still unavailable
+[09/07/2025 11:30:02] [ERROR] Failed to get FR24 statistics - monitoring check failed
