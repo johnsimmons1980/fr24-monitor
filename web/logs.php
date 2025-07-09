@@ -1,18 +1,16 @@
 <?php
 // Set timezone to match system timezone
 $systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
-if ($systemTimezone && $systemTimezone !== 'UTC') {
-    date_default_timezone_set($systemTimezone);
-} else {
-    // Fallback: try to detect timezone from system
-    $systemTZ = trim(shell_exec('date +%Z 2>/dev/null'));
-    if ($systemTZ === 'BST') {
+if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
+    try {
+        date_default_timezone_set($systemTimezone);
+    } catch (Exception $e) {
+        // Fallback if timezone is invalid
         date_default_timezone_set('Europe/London');
-    } elseif ($systemTZ === 'GMT') {
-        date_default_timezone_set('Europe/London');
-    } else {
-        date_default_timezone_set('UTC');
     }
+} else {
+    // Force Europe/London for UK systems
+    date_default_timezone_set('Europe/London');
 }
 
 $logFile = dirname(__DIR__) . '/fr24_monitor.log';

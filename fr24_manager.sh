@@ -1159,6 +1159,25 @@ start_webserver() {
                 rm -f "$pid_file"
             fi
         fi
+        
+        # Check if there's any lighttpd process using our config
+        if ps aux | grep -q "[l]ighttpd.*$SCRIPT_DIR"; then
+            print_status "INFO" "Web server already running (detected by process check)"
+            print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
+            
+            # Try to recreate PID file if possible
+            local running_pid=$(ps aux | grep "[l]ighttpd.*$SCRIPT_DIR" | awk '{print $2}' | head -1)
+            if [[ -n "$running_pid" ]]; then
+                echo "$running_pid" > "$pid_file"
+                print_status "INFO" "Recreated PID file with PID: $running_pid"
+            fi
+            return 0
+        fi
+        
+        # Port is in use by something else
+        print_status "ERROR" "Port $WEB_PORT is in use by another process"
+        print_status "INFO" "Use 'netstat -tlnp | grep :$WEB_PORT' to check what's using the port"
+        return 1
     fi
     
     # Start lighttpd in background
@@ -1269,6 +1288,11 @@ main() {
         "stop-web")
             stop_webserver
             ;;
+        "restart-web")
+            stop_webserver
+            sleep 2
+            start_webserver
+            ;;
         "help"|*)
             local log_file=$(get_log_file_path)
             cat << EOF
@@ -1290,6 +1314,7 @@ COMMANDS:
     preview     Show the cron and logrotate entries that would be installed
     start-web   Start the web dashboard server
     stop-web    Stop the web dashboard server
+    restart-web Restart the web dashboard server
     test        Test the monitor script in dry-run mode
     preview     Show the cron and logrotate entries that would be installed
     help        Show this help message
@@ -1301,6 +1326,7 @@ EXAMPLES:
     $0 test         # Test the monitoring script safely
     $0 start-web    # Start the web dashboard server
     $0 stop-web     # Stop the web dashboard server
+    $0 restart-web  # Restart the web dashboard server
     $0 uninstall    # Remove complete monitoring system
 
 FILES:
