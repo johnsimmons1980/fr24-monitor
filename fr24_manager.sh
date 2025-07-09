@@ -1463,7 +1463,7 @@ Configuration tested:
 
 This is an automated test email from the FR24 Monitor system.";
 
-                    // Execute the email script
+                    // Execute the email script and capture both stdout and stderr
                     $command = 'cd ' . escapeshellarg(dirname($emailScript)) . ' && ' . 
                               escapeshellarg($emailScript) . ' ' . 
                               escapeshellarg($testSubject) . ' ' . 
@@ -1472,11 +1472,26 @@ This is an automated test email from the FR24 Monitor system.";
                     $output = shell_exec($command);
                     $exitCode = shell_exec('echo $?');
                     
+                    // Also capture msmtp log if it exists
+                    $msmtpLog = '';
+                    if (file_exists('/tmp/msmtp.log')) {
+                        $msmtpLog = file_get_contents('/tmp/msmtp.log');
+                    }
+                    
                     if (trim($exitCode) === "0") {
                         $message = "Test email sent successfully! Check your inbox at " . htmlspecialchars($config['to_email']);
+                        if (!empty($output)) {
+                            $message .= "\n\nScript output:\n" . htmlspecialchars($output);
+                        }
                         $messageType = 'success';
                     } else {
-                        $message = "Failed to send test email. Error: " . htmlspecialchars($output);
+                        $message = "Failed to send test email (exit code: " . trim($exitCode) . ")";
+                        if (!empty($output)) {
+                            $message .= "\n\nScript output:\n" . htmlspecialchars($output);
+                        }
+                        if (!empty($msmtpLog)) {
+                            $message .= "\n\nmsmtp log:\n" . htmlspecialchars($msmtpLog);
+                        }
                         $messageType = 'error';
                     }
                 } else {
@@ -1524,7 +1539,7 @@ if (file_exists($configFile)) {
 
         <?php if ($message): ?>
             <div class="alert alert-<?= $messageType ?>">
-                <?= $message ?>
+                <pre style="white-space: pre-wrap; margin: 0; font-family: inherit;"><?= htmlspecialchars($message) ?></pre>
             </div>
         <?php endif; ?>
 
@@ -1547,6 +1562,17 @@ if (file_exists($configFile)) {
                             Send Test Email
                         </button>
                     </form>
+                    
+                    <div style="margin-top: 2rem; padding: 1rem; background: #f7fafc; border-radius: 5px;">
+                        <h4 style="margin-bottom: 0.5rem; color: #2d3748;">Debug Information:</h4>
+                        <small style="color: #718096;">
+                            • The email script will show detailed logs above if there are any issues<br>
+                            • Check that your SMTP credentials are correct<br>
+                            • For Gmail, make sure you're using an App Password, not your regular password<br>
+                            • Check your spam/junk folder if the test email doesn't arrive<br>
+                            • You can also check /tmp/msmtp.log for more detailed SMTP logs
+                        </small>
+                    </div>
                 <?php else: ?>
                     <div class="alert alert-warning">
                         Email alerts are not configured or enabled. Please <a href="config.php">configure email settings</a> first.
