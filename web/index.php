@@ -134,7 +134,22 @@ $monitoringTrend = $pdo->query("
                 <?= htmlspecialchars($deleteMessage) ?>
             </div>
             <script>
-                // Auto-hide message after 5 seconds and clean URL
+                // Clean the URL after 2 seconds using a simpler approach
+                setTimeout(function() {
+                    try {
+                        var currentUrl = window.location.href;
+                        if (currentUrl.includes('deleted=')) {
+                            var cleanUrl = currentUrl.replace(/[?&]deleted=[^&]*/, '');
+                            // Remove any leftover ? at the end
+                            cleanUrl = cleanUrl.replace(/\?$/, '');
+                            window.history.replaceState({}, document.title, cleanUrl);
+                        }
+                    } catch (e) {
+                        console.error('Error cleaning URL:', e);
+                    }
+                }, 2000);
+                
+                // Auto-hide message after 5 seconds
                 setTimeout(function() {
                     var alert = document.getElementById('deleteAlert');
                     if (alert) {
@@ -144,24 +159,7 @@ $monitoringTrend = $pdo->query("
                             alert.remove();
                         }, 500);
                     }
-                    
-                    // Clean the URL to remove the deleted parameter
-                    if (window.location.search.includes('deleted=')) {
-                        var url = new URL(window.location);
-                        url.searchParams.delete('deleted');
-                        window.history.replaceState({}, document.title, url.pathname + url.search);
-                    }
                 }, 5000);
-                
-                // Also clean URL immediately on page load (for subsequent refreshes)
-                if (window.location.search.includes('deleted=')) {
-                    var url = new URL(window.location);
-                    url.searchParams.delete('deleted');
-                    // Use a slight delay to allow the message to be seen first
-                    setTimeout(function() {
-                        window.history.replaceState({}, document.title, url.pathname + url.search);
-                    }, 1000);
-                }
             </script>
         <?php endif; ?>
 
