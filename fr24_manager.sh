@@ -666,13 +666,12 @@ Description=FR24 Monitor Web Dashboard
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 User=$current_user
 Group=$current_user
 WorkingDirectory=$SCRIPT_DIR
-ExecStart=$SCRIPT_DIR/fr24_manager.sh start-web
+ExecStart=$SCRIPT_DIR/start_web_service.sh
 ExecStop=$SCRIPT_DIR/fr24_manager.sh stop-web
-PIDFile=$SCRIPT_DIR/lighttpd.pid
 Restart=on-failure
 RestartSec=5
 

@@ -64,10 +64,12 @@ if ($_POST && isset($_POST['delete_reboot_id'])) {
     exit;
 }
 
-// Show delete message if redirected
+// Show delete message if redirected and clean URL immediately
 $deleteMessage = '';
 $deleteMessageType = '';
+$showDeleteMessage = false;
 if (isset($_GET['deleted'])) {
+    $showDeleteMessage = true;
     if ($_GET['deleted'] === '1') {
         $deleteMessage = "Reboot entry deleted successfully.";
         $deleteMessageType = "success";
@@ -127,10 +129,40 @@ $monitoringTrend = $pdo->query("
             <p>Real-time monitoring and analytics for FlightRadar24 feeder status</p>
         </div>
 
-        <?php if ($deleteMessage): ?>
-            <div class="alert alert-<?= $deleteMessageType ?>">
+        <?php if ($showDeleteMessage && $deleteMessage): ?>
+            <div id="deleteAlert" class="alert alert-<?= $deleteMessageType ?>">
                 <?= htmlspecialchars($deleteMessage) ?>
             </div>
+            <script>
+                // Auto-hide message after 5 seconds and clean URL
+                setTimeout(function() {
+                    var alert = document.getElementById('deleteAlert');
+                    if (alert) {
+                        alert.style.transition = 'opacity 0.5s ease';
+                        alert.style.opacity = '0';
+                        setTimeout(function() {
+                            alert.remove();
+                        }, 500);
+                    }
+                    
+                    // Clean the URL to remove the deleted parameter
+                    if (window.location.search.includes('deleted=')) {
+                        var url = new URL(window.location);
+                        url.searchParams.delete('deleted');
+                        window.history.replaceState({}, document.title, url.pathname + url.search);
+                    }
+                }, 5000);
+                
+                // Also clean URL immediately on page load (for subsequent refreshes)
+                if (window.location.search.includes('deleted=')) {
+                    var url = new URL(window.location);
+                    url.searchParams.delete('deleted');
+                    // Use a slight delay to allow the message to be seen first
+                    setTimeout(function() {
+                        window.history.replaceState({}, document.title, url.pathname + url.search);
+                    }, 1000);
+                }
+            </script>
         <?php endif; ?>
 
         <?php if ($latestMonitoring): ?>
