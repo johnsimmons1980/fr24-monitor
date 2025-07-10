@@ -111,12 +111,30 @@ EMAIL_EOF
 )
     
     # Send email
+    echo "Attempting to send email to: $to_email"
+    echo "Using SMTP server: $smtp_host:$smtp_port"
+    echo "From: $from_email"
+    
     if echo "$email_content" | msmtp -C "$msmtp_config" "$to_email"; then
         echo "Email sent successfully to $to_email"
+        
+        # Check msmtp log for additional details
+        if [[ -f "/tmp/msmtp.log" ]]; then
+            echo "MSMTP Log (last 3 lines):"
+            tail -3 /tmp/msmtp.log
+        fi
+        
         rm -f "$msmtp_config"
         return 0
     else
         echo "Failed to send email. Check /tmp/msmtp.log for details."
+        
+        # Show msmtp log for debugging
+        if [[ -f "/tmp/msmtp.log" ]]; then
+            echo "MSMTP Log contents:"
+            cat /tmp/msmtp.log
+        fi
+        
         rm -f "$msmtp_config"
         return 1
     fi
