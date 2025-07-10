@@ -426,11 +426,30 @@ This is a test of the email alert system. In a real scenario, the system would b
         fi
     fi
     
-    # Apply configured reboot delay
+    # Apply configured reboot delay with countdown
     if [[ "$REBOOT_DELAY_SECONDS" -gt 0 ]]; then
         log_message "INFO" "Waiting $REBOOT_DELAY_SECONDS seconds before rebooting (as configured)..."
         log_message "INFO" "This delay allows time for email delivery and final system cleanup"
-        sleep "$REBOOT_DELAY_SECONDS"
+        
+        # Countdown timer
+        local remaining=$REBOOT_DELAY_SECONDS
+        while [[ $remaining -gt 0 ]]; do
+            local minutes=$((remaining / 60))
+            local seconds=$((remaining % 60))
+            
+            if [[ $minutes -gt 0 ]]; then
+                printf "\r[$(date '+%d/%m/%Y %H:%M:%S')] [COUNTDOWN] System will reboot in %d minutes and %d seconds (Press Ctrl+C to cancel)" $minutes $seconds
+            else
+                printf "\r[$(date '+%d/%m/%Y %H:%M:%S')] [COUNTDOWN] System will reboot in %d seconds (Press Ctrl+C to cancel)" $seconds
+            fi
+            
+            sleep 1
+            ((remaining--))
+        done
+        
+        # Clear the countdown line and log final message
+        printf "\n"
+        log_message "INFO" "Reboot delay completed"
     fi
     
     # Check if we have reboot permissions
