@@ -24,7 +24,7 @@ if ($_POST && isset($_POST['save_settings'])) {
         'monitoring' => [
             'check_interval_minutes' => intval($_POST['check_interval_minutes'] ?? 10),
             'aircraft_threshold' => intval($_POST['aircraft_threshold'] ?? 30),
-            'minimum_uptime_hours' => intval($_POST['minimum_uptime_hours'] ?? 2),
+            'minimum_uptime_hours' => floatval($_POST['minimum_uptime_hours'] ?? 2),
             'endpoint_timeout_seconds' => intval($_POST['endpoint_timeout_seconds'] ?? 10),
             'retry_attempts' => intval($_POST['retry_attempts'] ?? 3),
             'retry_delay_seconds' => intval($_POST['retry_delay_seconds'] ?? 5),
@@ -409,8 +409,8 @@ $logLevels = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
                             <label for="minimum_uptime_hours">Minimum Uptime (hours)</label>
                             <input type="number" id="minimum_uptime_hours" name="minimum_uptime_hours" 
                                    value="<?= htmlspecialchars($config['monitoring']['minimum_uptime_hours'] ?? 2) ?>" 
-                                   min="1" max="24" required>
-                            <small>Minimum uptime before allowing any reboot</small>
+                                   min="0" max="24" step="0.1" required>
+                            <small>Minimum uptime before allowing any reboot (0 = no minimum, supports decimals like 0.5 for 30 mins)</small>
                         </div>
                     </div>
                     <div class="form-row">
