@@ -2204,50 +2204,10 @@ This is an automated test email from the FR24 Monitor system."
     print_status "INFO" "Test complete. If you received the email, reboot alerts will work correctly."
 }
 
-# Function to create git templates and .gitignore
+# Function to create git templates
 create_git_templates() {
-    print_status "INFO" "Creating git templates and .gitignore file..."
+    print_status "INFO" "Creating git templates..."
     
-    # Create .gitignore file
-    cat > "$SCRIPT_DIR/.gitignore" << 'EOF'
-# FR24 Monitor - Git Ignore File
-# Prevent sensitive data and runtime files from being committed
-
-# Email configuration (contains passwords)
-email_config.json
-
-# Runtime files
-*.pid
-*.log
-*.log.*
-fr24_monitor.db*
-lighttpd_error.log
-
-# Web server runtime
-web/
-lighttpd.conf
-
-# Backup files
-*.backup
-crontab.backup
-
-# Temporary files
-*.tmp
-/tmp/
-
-# User-specific configuration
-.fr24_monitor_config
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-EOF
-
     # Create email config template
     cat > "$SCRIPT_DIR/email_config.template.json" << 'EOF'
 {
@@ -2322,10 +2282,6 @@ Test your email configuration:
 
 This will send a simulated reboot alert to verify your settings work correctly.
 EOF
-
-    if [[ -f "$SCRIPT_DIR/.gitignore" ]]; then
-        print_status "SUCCESS" "Created .gitignore file"
-    fi
     
     if [[ -f "$SCRIPT_DIR/email_config.template.json" ]]; then
         print_status "SUCCESS" "Created email configuration template"
@@ -2341,7 +2297,7 @@ EOF
         print_status "INFO" "To ensure sensitive data is not committed:"
         print_status "INFO" "1. Copy email template: cp email_config.template.json email_config.json"
         print_status "INFO" "2. Configure via web interface: http://localhost:$WEB_PORT/config.php"
-        print_status "INFO" "3. The .gitignore file will prevent sensitive files from being committed"
+        print_status "INFO" "3. Ensure .gitignore file prevents sensitive files from being committed"
     else
         print_status "INFO" "To initialize git repository:"
         print_status "INFO" "  git init"
