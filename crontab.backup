@@ -1,1 +1,0 @@
-*/10 * * * * /home/john/fr24-mon/fr24_monitor.sh --log-file /home/john/fr24-mon/fr24_monitor.log
