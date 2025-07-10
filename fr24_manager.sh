@@ -1556,7 +1556,7 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
     date_default_timezone_set('Europe/London');
 }
 
-$configFile = dirname(__DIR__) . '/email_config.json';
+$configFile = dirname(__DIR__) . '/config.json';
 $message = '';
 $messageType = '';
 
@@ -1768,7 +1768,7 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
     date_default_timezone_set('Europe/London');
 }
 
-$configFile = dirname(__DIR__) . '/email_config.json';
+$configFile = dirname(__DIR__) . '/config.json';
 $message = '';
 $messageType = '';
 
@@ -1930,7 +1930,7 @@ EOF
 # Usage: ./send_email.sh "subject" "message"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/email_config.json"
+CONFIG_FILE="$SCRIPT_DIR/config.json"
 
 # Function to send email alert
 send_email_alert() {
@@ -2168,7 +2168,7 @@ test_email_alert() {
     echo "================================"
     
     local email_script="$SCRIPT_DIR/send_email.sh"
-    local config_file="$SCRIPT_DIR/email_config.json"
+    local config_file="$SCRIPT_DIR/config.json"
     
     # Check if email script exists
     if [[ ! -f "$email_script" ]]; then
@@ -2283,10 +2283,10 @@ EOF
 
 1. Copy the email template:
    ```bash
-   cp email_config.template.json email_config.json
+   cp email_config.template.json config.json
    ```
 
-2. Edit `email_config.json` with your email settings, or use the web interface:
+2. Edit `config.json` with your email settings, or use the web interface:
    - Visit: http://localhost:6869/config.php
    - Configure your SMTP settings
    - Test the email configuration
@@ -2317,7 +2317,7 @@ EOF
 
 ## Security Notes
 
-- The `email_config.json` file is ignored by git to prevent password exposure
+- The `config.json` file is ignored by git to prevent password exposure
 - Never commit email passwords to version control
 - Use app passwords when available (more secure than regular passwords)
 - The web interface at `/config.php` provides a user-friendly setup experience
@@ -2344,7 +2344,7 @@ EOF
     if [[ -d "$SCRIPT_DIR/.git" ]]; then
         print_status "INFO" "Git repository detected"
         print_status "INFO" "To ensure sensitive data is not committed:"
-        print_status "INFO" "1. Copy email template: cp email_config.template.json email_config.json"
+        print_status "INFO" "1. Copy email template: cp email_config.template.json config.json"
         print_status "INFO" "2. Configure via web interface: http://localhost:$WEB_PORT/config.php"
         print_status "INFO" "3. Ensure .gitignore file prevents sensitive files from being committed"
     else
