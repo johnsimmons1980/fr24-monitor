@@ -426,6 +426,13 @@ This is a test of the email alert system. In a real scenario, the system would b
         fi
     fi
     
+    # Apply configured reboot delay
+    if [[ "$REBOOT_DELAY_SECONDS" -gt 0 ]]; then
+        log_message "INFO" "Waiting $REBOOT_DELAY_SECONDS seconds before rebooting (as configured)..."
+        log_message "INFO" "This delay allows time for email delivery and final system cleanup"
+        sleep "$REBOOT_DELAY_SECONDS"
+    fi
+    
     # Check if we have reboot permissions
     if ! sudo -n reboot &>/dev/null; then
         log_message "ERROR" "No permission to reboot. Please run with sudo or configure passwordless sudo for reboot command"
