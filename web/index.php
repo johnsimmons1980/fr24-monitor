@@ -273,6 +273,7 @@ $monitoringTrend = $pdo->query("
             <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s T') ?></p>
             <p>
                 <a href="logs.php" class="btn">View Detailed Logs</a>
+                <a href="settings.php" class="btn" style="background: #667eea; margin-left: 0.5rem;">Settings</a>
                 <a href="config.php" class="btn" style="background: #9f7aea; margin-left: 0.5rem;">Email Configuration</a>
             </p>
             <p style="font-size: 0.8rem; color: #718096;">PHP Timezone: <?= date_default_timezone_get() ?> | System TZ: <?= $systemTimezone ?? 'Unknown' ?></p>

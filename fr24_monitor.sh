@@ -9,17 +9,50 @@ set -euo pipefail
 # Get script directory for portable paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Default configuration
-DEFAULT_ENDPOINT="http://localhost:8754/monitor.json"  # Common FR24 feeder endpoint
-TRACKED_THRESHOLD=0
-MINIMUM_UPTIME_HOURS=2  # Minimum uptime before allowing reboot
-DRY_RUN=false
-VERBOSE=false
-LOG_FILE="$SCRIPT_DIR/fr24_monitor.log"  # Use script directory by default
-CONFIG_FILE="$SCRIPT_DIR/.fr24_monitor_config"  # Configuration file for cached settings
-MAX_LOG_SIZE_MB=2  # Maximum log file size in MB before rotation
-MAX_LOG_FILES=2     # Maximum number of rotated log files to keep
-FR24_SERVICE_NAME="fr24feed"  # Default FR24 service name
+# Load configuration from config file
+if [[ -f "$SCRIPT_DIR/load_config.sh" ]]; then
+    source "$SCRIPT_DIR/load_config.sh"
+    if load_config; then
+        # Use config values with fallback to defaults
+        DEFAULT_ENDPOINT="${FR24_ENDPOINT_URL:-http://localhost:8754/monitor.json}"
+        TRACKED_THRESHOLD="${FR24_AIRCRAFT_THRESHOLD:-0}"
+
+        DRY_RUN="${FR24_DRY_RUN_MODE:-false}"
+        VERBOSE="${FR24_VERBOSE_OUTPUT:-false}"
+        LOG_FILE="$SCRIPT_DIR/fr24_monitor.log"
+        MAX_LOG_SIZE_MB="${FR24_MAX_LOG_SIZE_MB:-2}"
+        MAX_LOG_FILES="${FR24_KEEP_LOG_FILES:-2}"
+        FR24_SERVICE_NAME="${FR24_SERVICE_NAME:-fr24feed}"
+        ENDPOINT_TIMEOUT="${FR24_ENDPOINT_TIMEOUT:-10}"
+        RETRY_ATTEMPTS="${FR24_RETRY_ATTEMPTS:-3}"
+        RETRY_DELAY="${FR24_RETRY_DELAY:-5}"
+        REBOOT_DELAY_SECONDS="${FR24_REBOOT_DELAY:-300}"
+        SEND_EMAIL_ALERTS="${FR24_SEND_EMAIL_ALERTS:-true}"
+        REBOOT_ENABLED="${FR24_REBOOT_ENABLED:-true}"
+    else
+        echo "Warning: Could not load configuration file, using defaults"
+    fi
+else
+    echo "Warning: Configuration loader not found, using defaults"
+fi
+
+# Default configuration (fallback if config loading fails)
+DEFAULT_ENDPOINT="${DEFAULT_ENDPOINT:-http://localhost:8754/monitor.json}"
+TRACKED_THRESHOLD="${TRACKED_THRESHOLD:-0}"
+
+DRY_RUN="${DRY_RUN:-false}"
+VERBOSE="${VERBOSE:-false}"
+LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/fr24_monitor.log}"
+CONFIG_FILE="$SCRIPT_DIR/.fr24_monitor_config"
+MAX_LOG_SIZE_MB="${MAX_LOG_SIZE_MB:-2}"
+MAX_LOG_FILES="${MAX_LOG_FILES:-2}"
+FR24_SERVICE_NAME="${FR24_SERVICE_NAME:-fr24feed}"
+ENDPOINT_TIMEOUT="${ENDPOINT_TIMEOUT:-10}"
+RETRY_ATTEMPTS="${RETRY_ATTEMPTS:-3}"
+RETRY_DELAY="${RETRY_DELAY:-5}"
+REBOOT_DELAY_SECONDS="${REBOOT_DELAY_SECONDS:-300}"
+SEND_EMAIL_ALERTS="${SEND_EMAIL_ALERTS:-true}"
+REBOOT_ENABLED="${REBOOT_ENABLED:-true}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -36,55 +69,34 @@ Usage: $0 [OPTIONS]
 Monitor FR24 server aircraft tracking status and reboot if tracking drops to 0.
 
 OPTIONS:
-    --endpoint URL|PORT|auto  FR24 monitoring endpoint. Can be:
-                              - Full URL: http://localhost:8754/monitor.json
-                              - Port number: 8754 (will build URL automatically) 
-                              - 'auto' to use standard FR24 port 8754 (cached after first success)
-                              - IP/hostname: 192.168.1.100 (will add :8754/monitor.json)
-                              (default: auto, uses port 8754)
+    --endpoint URL           FR24 monitoring endpoint URL
+                             (default: $DEFAULT_ENDPOINT)
     --dry-run                Run in dry-run mode (don't actually reboot)
     --verbose                Enable verbose output
     --log-file FILE          Log file path (default: $LOG_FILE)
-    --min-uptime HOURS       Minimum uptime hours before allowing reboot (default: $MINIMUM_UPTIME_HOURS)
     --threshold NUM          Reboot threshold - reboot if tracked <= NUM (default: $TRACKED_THRESHOLD)
     --max-log-size MB        Maximum log file size in MB before rotation (default: $MAX_LOG_SIZE_MB)
     --max-log-files N        Maximum number of rotated log files to keep (default: $MAX_LOG_FILES)
     --service-name NAME      FR24 service name to restart if endpoint fails (default: fr24feed)
-    --clear-cache            Clear cached endpoint configuration and re-detect
-    --show-config            Show current cached configuration
     --help                   Show this help message
 
 CONFIGURATION:
-    Default endpoint: auto-detect or $DEFAULT_ENDPOINT
+    Default endpoint: $DEFAULT_ENDPOINT
     Default log file: $LOG_FILE
     Default config file: $CONFIG_FILE
     Default reboot threshold: tracked <= $TRACKED_THRESHOLD
-    Default minimum uptime: $MINIMUM_UPTIME_HOURS hours
     Default max log size: $MAX_LOG_SIZE_MB MB
     Default max log files: $MAX_LOG_FILES files
     Default service name: $FR24_SERVICE_NAME
 
 Examples:
-    $0 --dry-run                                    # Use standard FR24 port and test (uses cache)
-    $0 --endpoint auto --dry-run                    # Explicitly use standard FR24 port
-    $0 --endpoint 8754 --dry-run                    # Use specific port (same as auto)
-    $0 --endpoint http://192.168.1.100:8754/monitor.json --dry-run  # Full URL
-    $0 --endpoint 192.168.1.100 --dry-run          # Remote host (will use port 8754)
-    $0 --clear-cache --dry-run                      # Clear cache and use standard port
-    $0 --show-config                                # Show cached configuration
+    $0 --dry-run                                    # Test with default endpoint
+    $0 --endpoint http://192.168.1.100:8754/monitor.json --dry-run  # Test with custom endpoint
     $0 --verbose                                    # Production mode with verbose output
-    $0 --min-uptime 4 --dry-run                    # Test with 4-hour minimum uptime
     $0 --threshold 50 --dry-run                    # Test reboot logic when tracked <= 50
     $0 --threshold 200 --dry-run --verbose         # Test with high threshold to trigger reboot
     $0 --max-log-size 5 --max-log-files 3          # Rotate logs at 5MB, keep 3 files
-    $0 --service-name piaware --endpoint auto --dry-run  # Use standard port for PiAware feeder
-
-CACHE BEHAVIOR:
-    - First run will test and cache the standard FR24 endpoint (http://localhost:8754/monitor.json)
-    - Subsequent runs will use the cached endpoint (much faster)
-    - If cached endpoint becomes unresponsive, automatic fallback to standard port occurs
-    - Use --clear-cache to force re-testing of the standard endpoint
-    - Use --show-config to view cached settings
+    $0 --service-name piaware --dry-run            # Monitor PiAware feeder service
 
 EOF
 }
@@ -340,23 +352,17 @@ reboot_server() {
     local tracked="${2:-0}"
     local endpoint="${3:-unknown}"
     
-    # Check uptime before rebooting
+    # Get current uptime for logging purposes only
     local uptime_hours=$(get_uptime_hours)
-    log_message "INFO" "Current system uptime: $uptime_hours hours (minimum required: $MINIMUM_UPTIME_HOURS hours)"
+    log_message "INFO" "Current system uptime: $uptime_hours hours"
     
     # Log reboot event to database
     log_reboot_event "$tracked" "$TRACKED_THRESHOLD" "$uptime_hours" "$reason" "$DRY_RUN" "false" "false" "$endpoint"
     
-    if [[ "$uptime_hours" -lt "$MINIMUM_UPTIME_HOURS" ]]; then
-        log_message "WARN" "System uptime ($uptime_hours hours) is less than minimum required ($MINIMUM_UPTIME_HOURS hours)"
-        log_message "WARN" "Skipping reboot to prevent restart loops. Will retry monitoring."
-        return 1
-    fi
-    
     log_message "REBOOT" "$reason"
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_message "INFO" "DRY RUN: Would reboot server now (uptime check passed: $uptime_hours >= $MINIMUM_UPTIME_HOURS hours)"
+        log_message "INFO" "DRY RUN: Would reboot server now"
         log_message "INFO" "DRY RUN: Command that would be executed: sudo reboot"
         
         # Test email alert in dry run mode
@@ -433,142 +439,6 @@ This is a test of the email alert system. In a real scenario, the system would b
     # Log the actual reboot command being executed
     log_message "REBOOT" "Executing: sudo reboot"
     sudo reboot
-}
-
-# Function to build endpoint URL (FR24 always uses port 8754)
-build_endpoint_url() {
-    local provided_endpoint="$1"
-    local service_name="$2"
-    
-    # If user provided a full URL, use it as-is
-    if [[ "$provided_endpoint" =~ ^https?:// ]]; then
-        echo "$provided_endpoint"
-        return 0
-    fi
-    
-    # If user provided just a port number, build URL with it
-    if [[ "$provided_endpoint" =~ ^[0-9]+$ ]]; then
-        echo "http://localhost:$provided_endpoint/monitor.json"
-        return 0
-    fi
-    
-    # If user provided a hostname/IP, add the standard FR24 port
-    if [[ "$provided_endpoint" != "auto" ]] && [[ "$provided_endpoint" != "$DEFAULT_ENDPOINT" ]]; then
-        echo "http://$provided_endpoint:8754/monitor.json"
-        return 0
-    fi
-    
-    # Default case: use cached config or standard FR24 port
-    local cached_endpoint
-    if cached_endpoint=$(load_endpoint_config); then
-        
-        # Verify the cached endpoint still works
-        log_message "INFO" "Verifying cached endpoint is still responsive..." >&2
-        if curl -s --connect-timeout 5 --max-time 10 "$cached_endpoint" >/dev/null 2>&1; then
-            log_message "SUCCESS" "Cached endpoint verified and responsive: $cached_endpoint" >&2
-            echo "$cached_endpoint"
-            return 0
-        else
-            log_message "WARN" "Cached endpoint no longer responsive, using standard FR24 port" >&2
-            clear_endpoint_config
-        fi
-    fi
-    
-    # Use standard FR24 port (8754)
-    local final_url="http://localhost:8754/monitor.json"
-    
-    log_message "INFO" "Using standard FR24 endpoint: $final_url" >&2
-    
-    # Test if the endpoint works and save to cache if successful
-    if curl -s --connect-timeout 5 --max-time 10 "$final_url" >/dev/null 2>&1; then
-        log_message "SUCCESS" "Standard FR24 endpoint is responsive: $final_url" >&2
-        # Save successful detection to cache
-        save_endpoint_config "$final_url" "$service_name"
-    else
-        log_message "WARN" "Standard FR24 endpoint not responsive, may need service restart" >&2
-    fi
-    
-    echo "$final_url"
-    return 0
-}
-
-# Function to save endpoint configuration
-save_endpoint_config() {
-    local endpoint="$1"
-    local service_name="$2"
-    local timestamp=$(date '+%d/%m/%Y %H:%M:%S')
-    
-    log_message "INFO" "Saving endpoint configuration to $CONFIG_FILE" >&2
-    
-    cat > "$CONFIG_FILE" << EOF
-# FR24 Monitor Configuration File
-# Auto-generated on $timestamp
-# This file caches the detected endpoint to avoid re-detection on every run
-
-FR24_ENDPOINT="$endpoint"
-FR24_SERVICE_NAME="$service_name"
-DETECTION_DATE="$timestamp"
-EOF
-    
-    log_message "SUCCESS" "Endpoint configuration saved: $endpoint" >&2
-}
-
-# Function to load endpoint configuration
-load_endpoint_config() {
-    if [[ -r "$CONFIG_FILE" ]]; then
-        log_message "INFO" "Loading cached endpoint configuration from $CONFIG_FILE" >&2
-        
-        # Source the config file safely
-        local cached_endpoint=""
-        local cached_service=""
-        local detection_date=""
-        
-        # Parse config file manually for safety
-        while IFS='=' read -r key value; do
-            # Skip comments and empty lines
-            [[ "$key" =~ ^[[:space:]]*# ]] && continue
-            [[ -z "$key" ]] && continue
-            
-            # Remove quotes from value
-            value=$(echo "$value" | sed 's/^"//; s/"$//')
-            
-            case "$key" in
-                "FR24_ENDPOINT")
-                    cached_endpoint="$value"
-                    ;;
-                "FR24_SERVICE_NAME") 
-                    cached_service="$value"
-                    ;;
-                "DETECTION_DATE")
-                    detection_date="$value"
-                    ;;
-            esac
-        done < "$CONFIG_FILE"
-        
-        if [[ -n "$cached_endpoint" ]] && [[ "$cached_endpoint" =~ ^https?:// ]]; then
-            log_message "SUCCESS" "Using cached endpoint: $cached_endpoint (detected: $detection_date)" >&2
-            echo "$cached_endpoint"
-            return 0
-        else
-            log_message "WARN" "Invalid cached endpoint configuration, will re-detect" >&2
-            return 1
-        fi
-    else
-        log_message "INFO" "No cached endpoint configuration found, will detect" >&2
-        return 1
-    fi
-}
-
-# Function to clear endpoint configuration (for troubleshooting)
-clear_endpoint_config() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        rm -f "$CONFIG_FILE"
-        log_message "INFO" "Cleared cached endpoint configuration" >&2
-        return 0
-    else
-        log_message "INFO" "No cached configuration to clear" >&2
-        return 1
-    fi
 }
 
 # Database logging configuration
@@ -774,7 +644,7 @@ monitor_fr24() {
             log_message "INFO" "Reboot action completed successfully"
             exit 0  # Successful reboot or dry-run
         else
-            log_message "WARN" "Reboot was skipped due to uptime check"
+            log_message "WARN" "Reboot failed or was not permitted"
             log_message "INFO" "Will continue monitoring - next check may attempt reboot again"
         fi
     else
@@ -792,9 +662,7 @@ monitor_fr24() {
 }
 
 # Parse command line arguments
-ENDPOINT="auto"  # Changed to auto-detect by default
-CLEAR_CACHE=false
-SHOW_CONFIG=false
+ENDPOINT=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -814,10 +682,6 @@ while [[ $# -gt 0 ]]; do
             LOG_FILE="$2"
             shift 2
             ;;
-        --min-uptime)
-            MINIMUM_UPTIME_HOURS="$2"
-            shift 2
-            ;;
         --threshold)
             TRACKED_THRESHOLD="$2"
             shift 2
@@ -834,14 +698,6 @@ while [[ $# -gt 0 ]]; do
             FR24_SERVICE_NAME="$2"
             shift 2
             ;;
-        --clear-cache)
-            CLEAR_CACHE=true
-            shift
-            ;;
-        --show-config)
-            SHOW_CONFIG=true
-            shift
-            ;;
         --help)
             usage
             exit 0
@@ -854,39 +710,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Handle config-only operations first
-if [[ "$SHOW_CONFIG" == "true" ]]; then
-    echo "FR24 Monitor Configuration"
-    echo "=========================="
-    echo "Config file: $CONFIG_FILE"
-    echo
-    if [[ -f "$CONFIG_FILE" ]]; then
-        echo "Cached configuration:"
-        cat "$CONFIG_FILE"
-        echo
-        echo "Configuration status: Active"
-    else
-        echo "No cached configuration found."
-        echo "Configuration status: Not configured (will auto-detect on first run)"
-    fi
-    exit 0
+# Use configured endpoint or default
+if [[ -z "$ENDPOINT" ]]; then
+    FINAL_ENDPOINT="$DEFAULT_ENDPOINT"
+else
+    FINAL_ENDPOINT="$ENDPOINT"
 fi
-
-if [[ "$CLEAR_CACHE" == "true" ]]; then
-    echo "Clearing cached endpoint configuration..."
-    if clear_endpoint_config; then
-        echo "Cache cleared. Next run will perform fresh endpoint detection."
-    fi
-    
-    # If we're only clearing cache, exit here unless other operations requested
-    if [[ "$DRY_RUN" == "false" ]] && [[ "$ENDPOINT" == "auto" ]]; then
-        echo "Use --dry-run to test endpoint detection after cache clear."
-        exit 0
-    fi
-fi
-
-# Build the final endpoint URL with auto-detection if needed
-FINAL_ENDPOINT=$(build_endpoint_url "$ENDPOINT" "$FR24_SERVICE_NAME")
 
 # Validate endpoint URL
 if [[ ! "$FINAL_ENDPOINT" =~ ^https?:// ]]; then

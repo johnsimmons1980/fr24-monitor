@@ -1,0 +1,57 @@
+{
+    "monitoring": {
+        "check_interval_minutes": 10,
+        "aircraft_threshold": 0,
+        "minimum_uptime_hours": 2,
+        "endpoint_timeout_seconds": 10,
+        "retry_attempts": 3,
+        "retry_delay_seconds": 5,
+        "endpoint_url": "http://localhost:8754/monitor.json"
+    },
+    "reboot": {
+        "enabled": true,
+        "dry_run_mode": true,
+        "reboot_delay_seconds": 300,
+        "send_email_alerts": true
+    },
+    "logging": {
+        "log_level": "INFO",
+        "max_log_size_mb": 2,
+        "keep_log_files": 2,
+        "database_retention_days": 365,
+        "verbose_output": false
+    },
+    "web": {
+        "port": 6869,
+        "auto_refresh_seconds": 60,
+        "max_reboot_history": 50,
+        "timezone": "Europe/London"
+    },
+    "system": {
+        "service_name": "fr24feed",
+        "service_restart_enabled": true,
+        "service_restart_delay_seconds": 30,
+        "check_disk_space": true,
+        "min_disk_space_gb": 1
+    },
+    "notifications": {
+        "email_enabled": false,
+        "webhook_enabled": false,
+        "webhook_url": "",
+        "notification_cooldown_minutes": 60
+    },
+    "email": {
+        "enabled": false,
+        "smtp_host": "",
+        "smtp_port": 587,
+        "smtp_security": "tls",
+        "use_tls": true,
+        "use_starttls": true,
+        "smtp_username": "",
+        "smtp_password": "",
+        "from_email": "",
+        "from_name": "FR24 Monitor",
+        "to_email": "",
+        "subject": "FR24 Monitor Alert: System Reboot Required"
+    }
+}

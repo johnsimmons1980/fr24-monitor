@@ -4,6 +4,21 @@
 # Usage: ./fr24_manager.sh [install|uninstall|status|edit|test|preview|help]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load configuration from config file
+if [[ -f "$SCRIPT_DIR/load_config.sh" ]]; then
+    source "$SCRIPT_DIR/load_config.sh"
+    if load_config; then
+        WEB_PORT="${FR24_WEB_PORT:-6869}"
+        DEFAULT_ENDPOINT="${FR24_ENDPOINT_URL:-http://localhost:8754/monitor.json}"
+    else
+        echo "Warning: Could not load configuration file, using defaults"
+    fi
+else
+    echo "Warning: Configuration loader not found, using defaults"
+fi
+
+# Default configuration (fallback if config loading fails)
 CRON_FILE="$SCRIPT_DIR/fr24_monitor.cron"
 MONITOR_SCRIPT="$SCRIPT_DIR/fr24_monitor.sh"
 LOGROTATE_FILE="$SCRIPT_DIR/fr24_logrotate.conf"
@@ -13,10 +28,10 @@ LOGROTATE_DEST="/etc/logrotate.d/fr24_monitor"
 WEB_DIR="$SCRIPT_DIR/web"
 DATABASE_FILE="$SCRIPT_DIR/fr24_monitor.db"
 LIGHTTPD_CONFIG="$SCRIPT_DIR/lighttpd.conf"
-WEB_PORT=6869
+WEB_PORT="${WEB_PORT:-6869}"
 
 # FR24 monitoring configuration
-DEFAULT_ENDPOINT="http://localhost:8754/monitor.json"
+DEFAULT_ENDPOINT="${DEFAULT_ENDPOINT:-http://localhost:8754/monitor.json}"
 
 # Colors for output
 RED='\033[0;31m'
