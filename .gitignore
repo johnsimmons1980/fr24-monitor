@@ -12,7 +12,6 @@ fr24_monitor.db*
 lighttpd_error.log
 
 # Web server runtime
-web/
 lighttpd.conf
 
 # Backup files
