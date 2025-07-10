@@ -10,7 +10,7 @@
     },
     "reboot": {
         "enabled": true,
-        "dry_run_mode": true,
+        "dry_run_mode": false,
         "reboot_delay_seconds": 300,
         "send_email_alerts": true
     },
