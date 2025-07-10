@@ -1421,9 +1421,6 @@ $monitoringTrend = $pdo->query("
                 <a href="logs.php" class="btn">View Detailed Logs</a>
                 <a href="config.php" class="btn" style="background: #9f7aea; margin-left: 0.5rem;">Email Configuration</a>
             </p>
-            <p>
-                <a href="settings.php" class="btn" style="background: #38a169;">⚙️ Settings</a>
-            </p>
             <p style="font-size: 0.8rem; color: #718096;">PHP Timezone: <?= date_default_timezone_get() ?> | System TZ: <?= $systemTimezone ?? 'Unknown' ?></p>
         </div>
     </div>
@@ -2063,8 +2060,6 @@ fi
 EOF
 
     chmod +x "$SCRIPT_DIR/send_email.sh"
-    
-    print_status "SUCCESS" "Web dashboard files created successfully"
     
     return 0
 }

@@ -4,7 +4,7 @@
 # Usage: ./send_email.sh "subject" "message"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/config.json"
+CONFIG_FILE="$SCRIPT_DIR/email_config.json"
 
 # Function to send email alert
 send_email_alert() {
@@ -31,20 +31,20 @@ send_email_alert() {
     fi
     
     # Parse configuration
-    local enabled=$(jq -r '.email.enabled // false' "$CONFIG_FILE")
+    local enabled=$(jq -r '.enabled // false' "$CONFIG_FILE")
     if [[ "$enabled" != "true" ]]; then
         echo "Email alerts are disabled"
         return 0
     fi
     
-    local smtp_host=$(jq -r '.email.smtp_host // ""' "$CONFIG_FILE")
-    local smtp_port=$(jq -r '.email.smtp_port // 587' "$CONFIG_FILE")
-    local smtp_security=$(jq -r '.email.smtp_security // "tls"' "$CONFIG_FILE")
-    local smtp_username=$(jq -r '.email.smtp_username // ""' "$CONFIG_FILE")
-    local smtp_password=$(jq -r '.email.smtp_password // ""' "$CONFIG_FILE")
-    local from_email=$(jq -r '.email.from_email // ""' "$CONFIG_FILE")
-    local from_name=$(jq -r '.email.from_name // "FR24 Monitor"' "$CONFIG_FILE")
-    local to_email=$(jq -r '.email.to_email // ""' "$CONFIG_FILE")
+    local smtp_host=$(jq -r '.smtp_host // ""' "$CONFIG_FILE")
+    local smtp_port=$(jq -r '.smtp_port // 587' "$CONFIG_FILE")
+    local smtp_security=$(jq -r '.smtp_security // "tls"' "$CONFIG_FILE")
+    local smtp_username=$(jq -r '.smtp_username // ""' "$CONFIG_FILE")
+    local smtp_password=$(jq -r '.smtp_password // ""' "$CONFIG_FILE")
+    local from_email=$(jq -r '.from_email // ""' "$CONFIG_FILE")
+    local from_name=$(jq -r '.from_name // "FR24 Monitor"' "$CONFIG_FILE")
+    local to_email=$(jq -r '.to_email // ""' "$CONFIG_FILE")
     
     # Validate required fields
     if [[ -z "$smtp_host" || -z "$from_email" || -z "$to_email" ]]; then
