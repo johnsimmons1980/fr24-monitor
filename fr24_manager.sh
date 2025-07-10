@@ -709,6 +709,168 @@ EOF
     return 0
 }
 
+# Function to start systemd service
+start_systemd_service() {
+    print_status "INFO" "Starting systemd service..."
+    
+    local service_name="fr24-monitor-web"
+    
+    # Check if systemd service exists
+    if ! systemctl list-unit-files | grep -q "$service_name"; then
+        print_status "ERROR" "Systemd service not installed. Run install first."
+        return 1
+    fi
+    
+    # Stop any manually running web server first
+    stop_webserver
+    
+    # Start the systemd service
+    if sudo systemctl start "$service_name"; then
+        print_status "SUCCESS" "Systemd service started successfully"
+        print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
+        print_status "INFO" "Web server will auto-start after system reboot"
+        return 0
+    else
+        print_status "ERROR" "Failed to start systemd service"
+        print_status "INFO" "Check service status: sudo systemctl status $service_name"
+        return 1
+    fi
+}
+
+# Function to start web server manually
+start_webserver() {
+    print_status "INFO" "Starting web server on port $WEB_PORT..."
+    
+    # Check if configuration exists
+    if [[ ! -f "$LIGHTTPD_CONFIG" ]]; then
+        print_status "ERROR" "Web server configuration not found. Run install first."
+        return 1
+    fi
+    
+    # Check if web directory exists
+    if [[ ! -d "$WEB_DIR" ]]; then
+        print_status "ERROR" "Web directory not found. Run install first."
+        return 1
+    fi
+    
+    # Check if port is already in use
+    if netstat -tlnp 2>/dev/null | grep -q ":$WEB_PORT "; then
+        print_status "WARN" "Port $WEB_PORT is already in use"
+        
+        # Check if it's our lighttpd instance
+        local pid_file="$SCRIPT_DIR/lighttpd.pid"
+        if [[ -f "$pid_file" ]]; then
+            local pid=$(cat "$pid_file")
+            if ps -p "$pid" > /dev/null 2>&1; then
+                print_status "INFO" "Web server already running (PID: $pid)"
+                print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
+                return 0
+            else
+                # Remove stale PID file
+                rm -f "$pid_file"
+            fi
+        fi
+        
+        # Check if there's any lighttpd process using our config
+        if ps aux | grep -q "[l]ighttpd.*$SCRIPT_DIR"; then
+            print_status "INFO" "Web server already running (detected by process check)"
+            print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
+            
+            # Try to recreate PID file if possible
+            local running_pid=$(ps aux | grep "[l]ighttpd.*$SCRIPT_DIR" | awk '{print $2}' | head -1)
+            if [[ -n "$running_pid" ]]; then
+                echo "$running_pid" > "$SCRIPT_DIR/lighttpd.pid"
+                print_status "INFO" "Recreated PID file with PID: $running_pid"
+            fi
+            return 0
+        fi
+        
+        # Port is in use by something else
+        print_status "ERROR" "Port $WEB_PORT is in use by another process"
+        print_status "INFO" "Use 'netstat -tlnp | grep :$WEB_PORT' to check what's using the port"
+        return 1
+    fi
+    
+    # Start lighttpd in background
+    print_status "INFO" "Attempting to start lighttpd..."
+    if lighttpd -f "$LIGHTTPD_CONFIG" 2>"$SCRIPT_DIR/lighttpd_error.log" & then
+        local pid=$!
+        echo "$pid" > "$SCRIPT_DIR/lighttpd.pid"
+        
+        # Wait a moment for startup
+        sleep 2
+        
+        # Check if it's still running
+        if ps -p "$pid" > /dev/null 2>&1; then
+            print_status "SUCCESS" "Web server started (PID: $pid)"
+            print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
+            return 0
+        else
+            print_status "ERROR" "Web server failed to start"
+            print_status "INFO" "Check error log: $SCRIPT_DIR/lighttpd_error.log"
+            return 1
+        fi
+    else
+        print_status "ERROR" "Failed to start web server"
+        print_status "INFO" "Check if lighttpd is installed and configuration is valid"
+        return 1
+    fi
+}
+
+# Function to stop web server manually
+stop_webserver() {
+    print_status "INFO" "Stopping web server..."
+    
+    local pid_file="$SCRIPT_DIR/lighttpd.pid"
+    local stopped=false
+    
+    # Try to stop via PID file first
+    if [[ -f "$pid_file" ]]; then
+        local pid=$(cat "$pid_file")
+        if ps -p "$pid" > /dev/null 2>&1; then
+            print_status "INFO" "Stopping web server (PID: $pid)..."
+            kill "$pid" 2>/dev/null
+            
+            # Wait for graceful shutdown
+            local count=0
+            while ps -p "$pid" > /dev/null 2>&1 && [[ $count -lt 10 ]]; do
+                sleep 1
+                ((count++))
+            done
+            
+            if ps -p "$pid" > /dev/null 2>&1; then
+                print_status "WARN" "Graceful shutdown failed, using SIGKILL..."
+                kill -9 "$pid" 2>/dev/null
+                sleep 1
+            fi
+            
+            if ! ps -p "$pid" > /dev/null 2>&1; then
+                print_status "SUCCESS" "Web server stopped"
+                stopped=true
+            fi
+        fi
+        
+        # Remove PID file
+        rm -f "$pid_file"
+    fi
+    
+    # If PID file method didn't work, try to find and kill any remaining processes
+    if ! $stopped; then
+        local pids=$(ps aux | grep "[l]ighttpd.*$SCRIPT_DIR" | awk '{print $2}')
+        if [[ -n "$pids" ]]; then
+            print_status "INFO" "Found running lighttpd processes, stopping them..."
+            for pid in $pids; do
+                kill "$pid" 2>/dev/null
+            done
+            sleep 2
+            stopped=true
+            print_status "SUCCESS" "Web server processes stopped"
+        else
+            print_status "INFO" "No web server processes found running"
+        fi
+    fi
+}
+
 # Function to create web dashboard files
 create_web_dashboard() {
     print_status "INFO" "Creating web dashboard files..."
@@ -1230,7 +1392,6 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
         date_default_timezone_set('Europe/London');
     }
 } else {
-    // Force Europe/London for UK systems
     date_default_timezone_set('Europe/London');
 }
 
@@ -1590,7 +1751,7 @@ Configuration tested:
 
 This is an automated test email from the FR24 Monitor system.";
 
-                    // Execute the email script and capture both stdout and stderr
+                    # Execute the email script and capture both stdout and stderr
                     $command = 'cd ' . escapeshellarg(dirname($emailScript)) . ' && ' . 
                               escapeshellarg($emailScript) . ' ' . 
                               escapeshellarg($testSubject) . ' ' . 
@@ -1599,7 +1760,7 @@ This is an automated test email from the FR24 Monitor system.";
                     $output = shell_exec($command);
                     $exitCode = shell_exec('echo $?');
                     
-                    // Also capture msmtp log if it exists
+                    # Also capture msmtp log if it exists
                     $msmtpLog = '';
                     if (file_exists('/tmp/msmtp.log')) {
                         $msmtpLog = file_get_contents('/tmp/msmtp.log');
@@ -1712,8 +1873,6 @@ if (file_exists($configFile)) {
 </html>
 EOF
 
-    print_status "SUCCESS" "Web dashboard files created successfully"
-    
     # Create email helper script
     cat > "$SCRIPT_DIR/send_email.sh" << 'EOF'
 #!/bin/bash
@@ -1856,167 +2015,10 @@ EOF
     return 0
 }
 
-# Function to start web server
-start_webserver() {
-    print_status "INFO" "Starting web server on port $WEB_PORT..."
+# Function to uninstall systemd service
+uninstall_systemd_service() {
+    print_status "INFO" "Removing systemd service..."
     
-    # Check if configuration exists
-    if [[ ! -f "$LIGHTTPD_CONFIG" ]]; then
-        print_status "ERROR" "Web server configuration not found. Run install first."
-        return 1
-    fi
-    
-    # Check if web directory exists
-    if [[ ! -d "$WEB_DIR" ]]; then
-        print_status "ERROR" "Web directory not found. Run install first."
-        return 1
-    fi
-    
-    # Check if port is already in use
-    if netstat -tlnp 2>/dev/null | grep -q ":$WEB_PORT "; then
-        print_status "WARN" "Port $WEB_PORT is already in use"
-        
-        # Check if it's our lighttpd instance
-        local pid_file="$SCRIPT_DIR/lighttpd.pid"
-        if [[ -f "$pid_file" ]]; then
-            local pid=$(cat "$pid_file")
-            if ps -p "$pid" > /dev/null 2>&1; then
-                print_status "INFO" "Web server already running (PID: $pid)"
-                print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
-                return 0
-            else
-                # Remove stale PID file
-                rm -f "$pid_file"
-            fi
-        fi
-        
-        # Check if there's any lighttpd process using our config
-        if ps aux | grep -q "[l]ighttpd.*$SCRIPT_DIR"; then
-            print_status "INFO" "Web server already running (detected by process check)"
-            print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
-            
-            # Try to recreate PID file if possible
-            local running_pid=$(ps aux | grep "[l]ighttpd.*$SCRIPT_DIR" | awk '{print $2}' | head -1)
-            if [[ -n "$running_pid" ]]; then
-                echo "$running_pid" > "$pid_file"
-                print_status "INFO" "Recreated PID file with PID: $running_pid"
-            fi
-            return 0
-        fi
-        
-        # Port is in use by something else
-        print_status "ERROR" "Port $WEB_PORT is in use by another process"
-        print_status "INFO" "Use 'netstat -tlnp | grep :$WEB_PORT' to check what's using the port"
-        return 1
-    fi
-    
-    # Start lighttpd in background
-    print_status "INFO" "Attempting to start lighttpd..."
-    if lighttpd -f "$LIGHTTPD_CONFIG" 2>"$SCRIPT_DIR/lighttpd_error.log" & then
-        local pid=$!
-        echo "$pid" > "$SCRIPT_DIR/lighttpd.pid"
-        
-        # Wait a moment for startup
-        sleep 2
-        
-        # Check multiple ways to verify startup
-        local attempts=0
-        local max_attempts=10
-        local server_started=false
-        
-        while [[ $attempts -lt $max_attempts ]]; do
-            # Check if process is still running
-            if ps -p "$pid" > /dev/null 2>&1; then
-                # Check if port is being used (multiple methods)
-                if netstat -tln 2>/dev/null | grep -q ":$WEB_PORT " || \
-                   ss -tln 2>/dev/null | grep -q ":$WEB_PORT " || \
-                   lsof -i ":$WEB_PORT" 2>/dev/null | grep -q "$pid"; then
-                    server_started=true
-                    break
-                fi
-                
-                # Also try a simple HTTP check to localhost
-                if command -v curl >/dev/null 2>&1; then
-                    if curl -s -o /dev/null --connect-timeout 1 "http://localhost:$WEB_PORT" 2>/dev/null; then
-                        server_started=true
-                        break
-                    fi
-                elif command -v wget >/dev/null 2>&1; then
-                    if wget -q -O /dev/null --timeout=1 "http://localhost:$WEB_PORT" 2>/dev/null; then
-                        server_started=true
-                        break
-                    fi
-                fi
-            fi
-            
-            sleep 1
-            ((attempts++))
-        done
-        
-        if [[ "$server_started" == "true" ]]; then
-            print_status "SUCCESS" "Web server started successfully (PID: $pid)"
-            print_status "INFO" "Dashboard available at: http://localhost:$WEB_PORT"
-            return 0
-        else
-            print_status "ERROR" "Web server failed to start properly"
-            if [[ -f "$SCRIPT_DIR/lighttpd_error.log" ]]; then
-                print_status "ERROR" "Check error log: $SCRIPT_DIR/lighttpd_error.log"
-                print_status "INFO" "Recent error log entries:"
-                tail -5 "$SCRIPT_DIR/lighttpd_error.log" | sed 's/^/  /'
-            fi
-            return 1
-        fi
-    else
-        print_status "ERROR" "Failed to start lighttpd process"
-        return 1
-    fi
-}
-
-# Function to stop web server
-stop_webserver() {
-    local pid_file="$SCRIPT_DIR/lighttpd.pid"
-    local stopped=false
-    
-    # First try to stop using PID file
-    if [[ -f "$pid_file" ]]; then
-        local pid=$(cat "$pid_file")
-        if ps -p "$pid" > /dev/null 2>&1; then
-            print_status "INFO" "Stopping web server (PID: $pid)..."
-            kill "$pid"
-            sleep 2
-            
-            # Verify it stopped
-            if ! ps -p "$pid" > /dev/null 2>&1; then
-                stopped=true
-                print_status "SUCCESS" "Web server stopped"
-            fi
-        fi
-        rm -f "$pid_file"
-    fi
-    
-    # If not stopped yet, look for any lighttpd processes using our config
-    if [[ "$stopped" == "false" ]]; then
-        local running_pids=$(ps aux | grep "[l]ighttpd.*$SCRIPT_DIR" | awk '{print $2}')
-        if [[ -n "$running_pids" ]]; then
-            print_status "INFO" "Found running lighttpd processes, stopping them..."
-            for pid in $running_pids; do
-                print_status "INFO" "Stopping lighttpd process (PID: $pid)..."
-                kill "$pid" 2>/dev/null
-            done
-            sleep 2
-            stopped=true
-            print_status "SUCCESS" "Web server processes stopped"
-        else
-            print_status "INFO" "No web server processes found running"
-        fi
-    fi
-}
-
-# Function to uninstall web components
-uninstall_web_components() {
-    print_status "INFO" "Removing web dashboard components..."
-    
-    # Stop and disable systemd service first
     local service_name="fr24-monitor-web"
     local service_file="/etc/systemd/system/${service_name}.service"
     
@@ -2030,7 +2032,14 @@ uninstall_web_components() {
             sudo systemctl daemon-reload
             print_status "SUCCESS" "Removed systemd service"
         fi
+    else
+        print_status "INFO" "Systemd service not found"
     fi
+}
+
+# Function to uninstall web components
+uninstall_web_components() {
+    print_status "INFO" "Removing web dashboard components..."
     
     # Stop web server
     stop_webserver
@@ -2353,10 +2362,11 @@ main() {
             install_webserver
             create_web_dashboard
             install_systemd_service
-            start_webserver
+            start_systemd_service
             create_git_templates
             ;;
         "uninstall")
+            uninstall_systemd_service
             uninstall_cron
             uninstall_logrotate
             uninstall_web_components

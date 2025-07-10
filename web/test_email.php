@@ -43,7 +43,7 @@ Configuration tested:
 
 This is an automated test email from the FR24 Monitor system.";
 
-                    // Execute the email script and capture both stdout and stderr
+                    # Execute the email script and capture both stdout and stderr
                     $command = 'cd ' . escapeshellarg(dirname($emailScript)) . ' && ' . 
                               escapeshellarg($emailScript) . ' ' . 
                               escapeshellarg($testSubject) . ' ' . 
@@ -52,7 +52,7 @@ This is an automated test email from the FR24 Monitor system.";
                     $output = shell_exec($command);
                     $exitCode = shell_exec('echo $?');
                     
-                    // Also capture msmtp log if it exists
+                    # Also capture msmtp log if it exists
                     $msmtpLog = '';
                     if (file_exists('/tmp/msmtp.log')) {
                         $msmtpLog = file_get_contents('/tmp/msmtp.log');

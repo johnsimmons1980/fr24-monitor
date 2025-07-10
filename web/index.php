@@ -64,12 +64,10 @@ if ($_POST && isset($_POST['delete_reboot_id'])) {
     exit;
 }
 
-// Show delete message if redirected and clean URL immediately
+// Show delete message if redirected
 $deleteMessage = '';
 $deleteMessageType = '';
-$showDeleteMessage = false;
 if (isset($_GET['deleted'])) {
-    $showDeleteMessage = true;
     if ($_GET['deleted'] === '1') {
         $deleteMessage = "Reboot entry deleted successfully.";
         $deleteMessageType = "success";
@@ -129,38 +127,10 @@ $monitoringTrend = $pdo->query("
             <p>Real-time monitoring and analytics for FlightRadar24 feeder status</p>
         </div>
 
-        <?php if ($showDeleteMessage && $deleteMessage): ?>
-            <div id="deleteAlert" class="alert alert-<?= $deleteMessageType ?>">
+        <?php if ($deleteMessage): ?>
+            <div class="alert alert-<?= $deleteMessageType ?>">
                 <?= htmlspecialchars($deleteMessage) ?>
             </div>
-            <script>
-                // Clean the URL after 2 seconds using a simpler approach
-                setTimeout(function() {
-                    try {
-                        var currentUrl = window.location.href;
-                        if (currentUrl.includes('deleted=')) {
-                            var cleanUrl = currentUrl.replace(/[?&]deleted=[^&]*/, '');
-                            // Remove any leftover ? at the end
-                            cleanUrl = cleanUrl.replace(/\?$/, '');
-                            window.history.replaceState({}, document.title, cleanUrl);
-                        }
-                    } catch (e) {
-                        console.error('Error cleaning URL:', e);
-                    }
-                }, 2000);
-                
-                // Auto-hide message after 5 seconds
-                setTimeout(function() {
-                    var alert = document.getElementById('deleteAlert');
-                    if (alert) {
-                        alert.style.transition = 'opacity 0.5s ease';
-                        alert.style.opacity = '0';
-                        setTimeout(function() {
-                            alert.remove();
-                        }, 500);
-                    }
-                }, 5000);
-            </script>
         <?php endif; ?>
 
         <?php if ($latestMonitoring): ?>

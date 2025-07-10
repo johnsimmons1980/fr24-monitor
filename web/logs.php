@@ -9,7 +9,6 @@ if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
         date_default_timezone_set('Europe/London');
     }
 } else {
-    // Force Europe/London for UK systems
     date_default_timezone_set('Europe/London');
 }
 
