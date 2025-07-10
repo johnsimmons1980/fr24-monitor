@@ -41,8 +41,8 @@
         "notification_cooldown_minutes": 60
     },
     "email": {
-        "enabled": false,
-        "smtp_host": "",
+        "enabled": true,
+        "smtp_host": "smtp.gmail.com",
         "smtp_port": 587,
         "smtp_security": "tls",
         "use_tls": true,
@@ -50,8 +50,8 @@
         "smtp_username": "",
         "smtp_password": "",
         "from_email": "",
-        "from_name": "FR24 Monitor",
+        "from_name": "",
         "to_email": "",
-        "subject": "FR24 Monitor Alert: System Reboot Required"
+        "subject": "FR24 Shit the bed"
     }
 }

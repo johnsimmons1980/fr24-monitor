@@ -370,7 +370,6 @@ $logLevels = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
             <p>Configure monitoring parameters, endpoints, and system behavior</p>
             <p>
                 <a href="index.php" class="btn">← Back to Dashboard</a>
-                <a href="config.php" class="btn" style="background: #9f7aea; margin-left: 0.5rem;">Email Settings</a>
             </p>
         </div>
 
@@ -645,7 +644,7 @@ $logLevels = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
                 </div>
 
                 <!-- Email Settings -->
-                <div class="form-section">
+                <div class="form-section" id="email">
                     <h4>📧 Email Settings</h4>
                     <div class="form-row">
                         <div class="form-group">

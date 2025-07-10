@@ -1,71 +1,8 @@
 <?php
-// Set timezone to match system timezone
-$systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
-if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
-    try {
-        date_default_timezone_set($systemTimezone);
-    } catch (Exception $e) {
-        date_default_timezone_set('Europe/London');
-    }
-} else {
-    date_default_timezone_set('Europe/London');
-}
-
-$configFile = dirname(__DIR__) . '/email_config.json';
-$message = '';
-$messageType = '';
-
-// Handle form submission
-if ($_POST) {
-    $config = [
-        'enabled' => isset($_POST['enabled']) ? true : false,
-        'smtp_host' => $_POST['smtp_host'] ?? '',
-        'smtp_port' => intval($_POST['smtp_port'] ?? 587),
-        'use_tls' => $_POST['smtp_security'] === 'tls',
-        'use_starttls' => $_POST['smtp_security'] === 'tls',
-        'smtp_user' => $_POST['smtp_username'] ?? '',
-        'smtp_password' => $_POST['smtp_password'] ?? '',
-        'from_email' => $_POST['from_email'] ?? '',
-        'from_name' => $_POST['from_name'] ?? 'FR24 Monitor',
-        'to_email' => $_POST['to_email'] ?? '',
-        'subject' => $_POST['subject'] ?? 'FR24 Monitor Alert: System Reboot Required',
-        'smtp_security' => $_POST['smtp_security'] ?? 'tls'
-    ];
-    
-    if (file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT))) {
-        $message = 'Configuration saved successfully!';
-        $messageType = 'success';
-    } else {
-        $message = 'Failed to save configuration. Check file permissions.';
-        $messageType = 'error';
-    }
-}
-
-// Load existing configuration
-$config = [];
-if (file_exists($configFile)) {
-    $configData = file_get_contents($configFile);
-    if ($configData) {
-        $config = json_decode($configData, true) ?? [];
-    }
-}
-
-// Default values
-$config = array_merge([
-    'enabled' => false,
-    'smtp_host' => '',
-    'smtp_port' => 587,
-    'smtp_security' => 'tls',
-    'use_tls' => true,
-    'use_starttls' => true,
-    'smtp_user' => '',
-    'smtp_username' => '',
-    'smtp_password' => '',
-    'from_email' => '',
-    'from_name' => 'FR24 Monitor',
-    'to_email' => '',
-    'subject' => 'FR24 Monitor Alert: System Reboot Required'
-], $config);
+// Email configuration has been consolidated into the main settings page
+// Redirect users to the main settings page where they can configure email along with other settings
+header("Location: settings.php#email");
+exit();
 ?>
 <!DOCTYPE html>
 <html lang="en">
