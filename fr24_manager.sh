@@ -15,6 +15,9 @@ DATABASE_FILE="$SCRIPT_DIR/fr24_monitor.db"
 LIGHTTPD_CONFIG="$SCRIPT_DIR/lighttpd.conf"
 WEB_PORT=6869
 
+# FR24 monitoring configuration
+DEFAULT_ENDPOINT="http://localhost:8754/monitor.json"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -154,12 +157,20 @@ install_cron() {
         
         # Run the monitor script once to populate the log immediately
         print_status "INFO" "Running monitor script once to populate log file..."
-        if bash "$MONITOR_SCRIPT" >/dev/null 2>&1; then
-            print_status "SUCCESS" "Monitor script executed successfully - log file populated"
-            print_status "INFO" "You can check the initial log entry with: tail -f $log_file"
+        
+        # Check if FR24 feeder is available before running the monitor
+        if curl -s --connect-timeout 5 "$DEFAULT_ENDPOINT" >/dev/null 2>&1; then
+            if bash "$MONITOR_SCRIPT" >/dev/null 2>&1; then
+                print_status "SUCCESS" "Monitor script executed successfully - log file populated"
+                print_status "INFO" "You can check the initial log entry with: tail -f $log_file"
+            else
+                print_status "WARN" "Monitor script execution failed, but installation is complete"
+                print_status "INFO" "The monitor will start working on its next scheduled run"
+            fi
         else
-            print_status "WARN" "Monitor script execution failed, but installation is complete"
-            print_status "INFO" "The monitor will start working on its next scheduled run"
+            print_status "INFO" "FR24 feeder not detected - skipping initial monitor run"
+            print_status "INFO" "The monitor will start working when FR24 feeder is available"
+            print_status "INFO" "Check status with: tail -f $log_file"
         fi
     else
         print_status "ERROR" "Failed to install crontab"
@@ -729,6 +740,29 @@ start_systemd_service() {
         print_status "SUCCESS" "Systemd service started successfully"
         print_status "SUCCESS" "Dashboard available at: http://localhost:$WEB_PORT"
         print_status "INFO" "Web server will auto-start after system reboot"
+        
+        # Wait a moment for the service to fully start
+        sleep 2
+        
+        # Run the monitor script once to populate the log immediately
+        print_status "INFO" "Running monitor script once to populate log file..."
+        local log_file=$(get_log_file_path)
+        
+        # Check if FR24 feeder is available before running the monitor
+        if curl -s --connect-timeout 5 "$DEFAULT_ENDPOINT" >/dev/null 2>&1; then
+            if bash "$MONITOR_SCRIPT" >/dev/null 2>&1; then
+                print_status "SUCCESS" "Monitor script executed successfully - log file populated"
+                print_status "INFO" "You can check the initial log entry with: tail -f $log_file"
+            else
+                print_status "WARN" "Monitor script execution failed, but installation is complete"
+                print_status "INFO" "The monitor will start working on its next scheduled run"
+            fi
+        else
+            print_status "INFO" "FR24 feeder not detected - skipping initial monitor run"
+            print_status "INFO" "The monitor will start working when FR24 feeder is available"
+            print_status "INFO" "Check status with: tail -f $log_file"
+        fi
+        
         return 0
     else
         print_status "ERROR" "Failed to start systemd service"
