@@ -1,5 +1,36 @@
-# Ignore all .log files
-*.log
+# FR24 Monitor - Git Ignore File
+# Prevent sensitive data and runtime files from being committed
 
-#specific files
+# Email configuration (contains passwords)
 email_config.json
+
+# Runtime files
+*.pid
+*.log
+*.log.*
+fr24_monitor.db*
+lighttpd_error.log
+
+# Web server runtime
+web/
+lighttpd.conf
+
+# Backup files
+*.backup
+crontab.backup
+
+# Temporary files
+*.tmp
+/tmp/
+
+# User-specific configuration
+.fr24_monitor_config
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
