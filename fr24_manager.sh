@@ -651,6 +651,65 @@ EOF
     fi
 }
 
+# Function to create systemd service for auto-starting web server after reboot
+install_systemd_service() {
+    print_status "INFO" "Installing systemd service for auto-start after reboot..."
+    
+    local service_name="fr24-monitor-web"
+    local service_file="/etc/systemd/system/${service_name}.service"
+    local current_user=$(whoami)
+    
+    # Create the systemd service file
+    cat > "/tmp/${service_name}.service" << EOF
+[Unit]
+Description=FR24 Monitor Web Dashboard
+After=network.target
+
+[Service]
+Type=forking
+User=$current_user
+Group=$current_user
+WorkingDirectory=$SCRIPT_DIR
+ExecStart=$SCRIPT_DIR/fr24_manager.sh start-web
+ExecStop=$SCRIPT_DIR/fr24_manager.sh stop-web
+PIDFile=$SCRIPT_DIR/lighttpd.pid
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Copy to systemd directory with sudo
+    if sudo cp "/tmp/${service_name}.service" "$service_file" 2>/dev/null; then
+        sudo chown root:root "$service_file"
+        sudo chmod 644 "$service_file"
+        
+        # Reload systemd and enable the service
+        if sudo systemctl daemon-reload && sudo systemctl enable "$service_name"; then
+            print_status "SUCCESS" "Systemd service installed and enabled"
+            print_status "INFO" "Web server will auto-start after system reboot"
+            print_status "INFO" "Service commands:"
+            print_status "INFO" "  Start:   sudo systemctl start $service_name"
+            print_status "INFO" "  Stop:    sudo systemctl stop $service_name" 
+            print_status "INFO" "  Status:  sudo systemctl status $service_name"
+            print_status "INFO" "  Disable: sudo systemctl disable $service_name"
+        else
+            print_status "WARN" "Failed to enable systemd service"
+            return 1
+        fi
+    else
+        print_status "WARN" "Could not install systemd service (no sudo access or systemd not available)"
+        print_status "INFO" "Web server will need to be started manually after reboot"
+        return 1
+    fi
+    
+    # Clean up temp file
+    rm -f "/tmp/${service_name}.service"
+    
+    return 0
+}
+
 # Function to create web dashboard files
 create_web_dashboard() {
     print_status "INFO" "Creating web dashboard files..."
@@ -852,6 +911,25 @@ tr:hover {
     color: #2f855a;
     border: 1px solid #9ae6b4;
 }
+
+.delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0.25rem;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+    line-height: 1;
+}
+
+.delete-btn:hover {
+    background: #fed7d7;
+}
+
+.delete-btn:active {
+    background: #feb2b2;
+}
 EOF
 
     # Create main dashboard PHP file
@@ -900,6 +978,41 @@ try {
     die('<div class="alert alert-error">Database connection failed: ' . htmlspecialchars($e->getMessage()) . '</div>');
 }
 
+// Handle delete requests
+if ($_POST && isset($_POST['delete_reboot_id'])) {
+    $deleteId = intval($_POST['delete_reboot_id']);
+    try {
+        $stmt = $pdo->prepare("DELETE FROM reboot_events WHERE id = ?");
+        if ($stmt->execute([$deleteId])) {
+            $deleteMessage = "Reboot entry deleted successfully.";
+            $deleteMessageType = "success";
+        } else {
+            $deleteMessage = "Failed to delete reboot entry.";
+            $deleteMessageType = "error";
+        }
+    } catch (PDOException $e) {
+        $deleteMessage = "Error deleting entry: " . htmlspecialchars($e->getMessage());
+        $deleteMessageType = "error";
+    }
+    
+    // Redirect to avoid resubmission on refresh
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?deleted=' . ($deleteMessageType === 'success' ? '1' : '0'));
+    exit;
+}
+
+// Show delete message if redirected
+$deleteMessage = '';
+$deleteMessageType = '';
+if (isset($_GET['deleted'])) {
+    if ($_GET['deleted'] === '1') {
+        $deleteMessage = "Reboot entry deleted successfully.";
+        $deleteMessageType = "success";
+    } else {
+        $deleteMessage = "Failed to delete reboot entry.";
+        $deleteMessageType = "error";
+    }
+}
+
 // Get statistics
 $totalReboots = $pdo->query("SELECT COUNT(*) FROM reboot_events")->fetchColumn();
 $lastReboot = $pdo->query("SELECT timestamp, reason FROM reboot_events ORDER BY timestamp DESC LIMIT 1")->fetch();
@@ -918,7 +1031,7 @@ $latestMonitoring = $pdo->query("
 
 // Get recent reboot events
 $recentReboots = $pdo->query("
-    SELECT timestamp, tracked_aircraft, threshold, reason, dry_run, uptime_hours, endpoint
+    SELECT id, timestamp, tracked_aircraft, threshold, reason, dry_run, uptime_hours, endpoint
     FROM reboot_events 
     ORDER BY timestamp DESC 
     LIMIT 10
@@ -949,6 +1062,12 @@ $monitoringTrend = $pdo->query("
             <h1>🛩️ FR24 Monitor Dashboard</h1>
             <p>Real-time monitoring and analytics for FlightRadar24 feeder status</p>
         </div>
+
+        <?php if ($deleteMessage): ?>
+            <div class="alert alert-<?= $deleteMessageType ?>">
+                <?= htmlspecialchars($deleteMessage) ?>
+            </div>
+        <?php endif; ?>
 
         <?php if ($latestMonitoring): ?>
             <div class="stats-grid">
@@ -1053,6 +1172,7 @@ $monitoringTrend = $pdo->query("
                             <th>Uptime (hrs)</th>
                             <th>Type</th>
                             <th>Reason</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1070,6 +1190,14 @@ $monitoringTrend = $pdo->query("
                                     <?php endif; ?>
                                 </td>
                                 <td style="word-wrap: break-word; white-space: normal; max-width: 200px;"><?= htmlspecialchars($reboot['reason']) ?></td>
+                                <td>
+                                    <form method="POST" style="display: inline-block; margin: 0;" onsubmit="return confirm('Are you sure you want to delete this reboot entry?');">
+                                        <input type="hidden" name="delete_reboot_id" value="<?= $reboot['id'] ?>">
+                                        <button type="submit" class="delete-btn" title="Delete this entry">
+                                            🗑️
+                                        </button>
+                                    </form>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1889,6 +2017,22 @@ stop_webserver() {
 uninstall_web_components() {
     print_status "INFO" "Removing web dashboard components..."
     
+    # Stop and disable systemd service first
+    local service_name="fr24-monitor-web"
+    local service_file="/etc/systemd/system/${service_name}.service"
+    
+    if systemctl list-unit-files | grep -q "$service_name"; then
+        print_status "INFO" "Stopping and disabling systemd service..."
+        sudo systemctl stop "$service_name" 2>/dev/null || true
+        sudo systemctl disable "$service_name" 2>/dev/null || true
+        
+        if [[ -f "$service_file" ]]; then
+            sudo rm -f "$service_file"
+            sudo systemctl daemon-reload
+            print_status "SUCCESS" "Removed systemd service"
+        fi
+    fi
+    
     # Stop web server
     stop_webserver
     
@@ -1913,6 +2057,291 @@ uninstall_web_components() {
     print_status "SUCCESS" "Web components uninstalled"
 }
 
+# Function to show systemd service status
+show_systemd_service_status() {
+    local service_name="fr24-monitor-web"
+    
+    print_status "INFO" "FR24 Monitor Web Service Status"
+    echo "================================"
+    
+    # Check if systemd service exists
+    if systemctl list-unit-files | grep -q "$service_name"; then
+        print_status "SUCCESS" "Systemd service is installed: $service_name"
+        
+        # Show service status
+        echo
+        print_status "INFO" "Service status:"
+        sudo systemctl status "$service_name" --no-pager --lines=10 2>/dev/null || {
+            print_status "WARN" "Could not get service status (may need sudo)"
+        }
+        
+        # Show if enabled for auto-start
+        echo
+        if systemctl is-enabled "$service_name" >/dev/null 2>&1; then
+            print_status "SUCCESS" "Service is enabled for auto-start"
+        else
+            print_status "WARN" "Service is not enabled for auto-start"
+            print_status "INFO" "Enable with: sudo systemctl enable $service_name"
+        fi
+        
+        # Show if currently active
+        echo
+        if systemctl is-active "$service_name" >/dev/null 2>&1; then
+            print_status "SUCCESS" "Service is currently running"
+        else
+            print_status "WARN" "Service is not currently running"
+            print_status "INFO" "Start with: sudo systemctl start $service_name"
+        fi
+        
+    else
+        print_status "WARN" "Systemd service not found: $service_name"
+        print_status "INFO" "Install the service by running: $0 install"
+    fi
+    
+    echo
+    print_status "INFO" "Manual web server control:"
+    print_status "INFO" "  Start:   $0 start-web"
+    print_status "INFO" "  Stop:    $0 stop-web"
+    print_status "INFO" "  Restart: $0 restart-web"
+}
+
+# Function to test email alert system
+test_email_alert() {
+    print_status "INFO" "Testing FR24 Monitor Email Alert System"
+    echo "================================"
+    
+    local email_script="$SCRIPT_DIR/send_email.sh"
+    local config_file="$SCRIPT_DIR/email_config.json"
+    
+    # Check if email script exists
+    if [[ ! -f "$email_script" ]]; then
+        print_status "ERROR" "Email helper script not found: $email_script"
+        print_status "INFO" "Please run: $0 install"
+        return 1
+    fi
+    
+    # Check if config file exists
+    if [[ ! -f "$config_file" ]]; then
+        print_status "ERROR" "Email configuration not found: $config_file"
+        print_status "INFO" "Please configure email settings via the web interface: http://localhost:$WEB_PORT/config.php"
+        return 1
+    fi
+    
+    # Test email content similar to what would be sent during a reboot
+    local test_subject="FR24 Monitor Test: Reboot Alert System Test"
+    local test_message="This is a test of the FR24 Monitor reboot alert system.
+
+SIMULATED REBOOT EVENT DETAILS:
+=====================================
+Timestamp: $(date '+%Y-%m-%d %H:%M:%S %Z')
+Hostname: $(hostname)
+Reason: Testing reboot alert email system
+Aircraft Tracked: 0 (simulated)
+Alert Threshold: 0
+System Uptime: $(uptime -p)
+Monitoring Endpoint: http://localhost:8754/monitor.json
+
+SYSTEM INFORMATION:
+=====================================
+System Load: $(uptime | awk -F'load average:' '{print $2}' | xargs)
+Memory Usage: $(free -h | awk 'NR==2{printf "%.1f%%", $3/$2*100}')
+Disk Usage: $(df -h / | awk 'NR==2{print $5}')
+Network: $(ip route get 1.1.1.1 | head -1 | awk '{print $7}' | head -1)
+
+=====================================
+
+*** THIS IS A TEST EMAIL ***
+No actual reboot has occurred. This is a test to verify that reboot alerts 
+will be delivered successfully when the FR24 Monitor system detects a need 
+to restart the server.
+
+If you received this email, your FR24 Monitor email configuration is working 
+correctly and you will receive notifications when the system requires a reboot.
+
+To disable these test emails, avoid running the 'test-email' command.
+To configure email settings, visit: http://localhost:$WEB_PORT/config.php
+
+This is an automated test email from the FR24 Monitor system."
+
+    print_status "INFO" "Sending test reboot alert email..."
+    print_status "INFO" "Subject: $test_subject"
+    
+    # Execute the email script and capture both stdout and stderr
+    local output
+    local exit_code
+    
+    if output=$(bash "$email_script" "$test_subject" "$test_message" 2>&1); then
+        exit_code=$?
+        print_status "SUCCESS" "Test email sent successfully!"
+        print_status "INFO" "Check your email inbox for the test reboot alert."
+        echo
+        print_status "INFO" "Email script output:"
+        echo "$output"
+    else
+        exit_code=$?
+        print_status "ERROR" "Failed to send test email (exit code: $exit_code)"
+        echo
+        print_status "ERROR" "Email script output:"
+        echo "$output"
+        echo
+        print_status "INFO" "Troubleshooting steps:"
+        print_status "INFO" "1. Check email configuration: http://localhost:$WEB_PORT/config.php"
+        print_status "INFO" "2. Verify SMTP settings are correct"
+        print_status "INFO" "3. Check if email service requires app passwords (e.g., Gmail)"
+        print_status "INFO" "4. Ensure network connectivity to SMTP server"
+        return 1
+    fi
+    
+    echo
+    print_status "INFO" "Test complete. If you received the email, reboot alerts will work correctly."
+}
+
+# Function to create git templates and .gitignore
+create_git_templates() {
+    print_status "INFO" "Creating git templates and .gitignore file..."
+    
+    # Create .gitignore file
+    cat > "$SCRIPT_DIR/.gitignore" << 'EOF'
+# FR24 Monitor - Git Ignore File
+# Prevent sensitive data and runtime files from being committed
+
+# Email configuration (contains passwords)
+email_config.json
+
+# Runtime files
+*.pid
+*.log
+*.log.*
+fr24_monitor.db*
+lighttpd_error.log
+
+# Web server runtime
+web/
+lighttpd.conf
+
+# Backup files
+*.backup
+crontab.backup
+
+# Temporary files
+*.tmp
+/tmp/
+
+# User-specific configuration
+.fr24_monitor_config
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+EOF
+
+    # Create email config template
+    cat > "$SCRIPT_DIR/email_config.template.json" << 'EOF'
+{
+  "enabled": false,
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "smtp_security": "tls",
+  "use_tls": true,
+  "use_starttls": true,
+  "smtp_username": "your.email@example.com",
+  "smtp_password": "your-app-password-here",
+  "from_email": "your.email@example.com",
+  "from_name": "FR24 Monitor",
+  "to_email": "admin@example.com",
+  "subject": "FR24 Monitor Alert: System Reboot Required"
+}
+EOF
+
+    # Create README for email configuration
+    cat > "$SCRIPT_DIR/EMAIL_SETUP.md" << 'EOF'
+# FR24 Monitor Email Configuration
+
+## Quick Setup
+
+1. Copy the email template:
+   ```bash
+   cp email_config.template.json email_config.json
+   ```
+
+2. Edit `email_config.json` with your email settings, or use the web interface:
+   - Visit: http://localhost:6869/config.php
+   - Configure your SMTP settings
+   - Test the email configuration
+
+## Email Provider Settings
+
+### Gmail
+- SMTP Host: `smtp.gmail.com`
+- Port: `587`
+- Security: `TLS`
+- Username: Your Gmail address
+- Password: **Use an App Password, not your regular password**
+- Setup App Password: Google Account → Security → 2-Step Verification → App passwords
+
+### Outlook/Hotmail
+- SMTP Host: `smtp-mail.outlook.com`
+- Port: `587`
+- Security: `TLS`
+- Username: Your Outlook/Hotmail address
+- Password: Your regular password (or app password if 2FA enabled)
+
+### Yahoo
+- SMTP Host: `smtp.mail.yahoo.com`
+- Port: `587`
+- Security: `TLS`
+- Username: Your Yahoo address
+- Password: **Use an App Password**
+
+## Security Notes
+
+- The `email_config.json` file is ignored by git to prevent password exposure
+- Never commit email passwords to version control
+- Use app passwords when available (more secure than regular passwords)
+- The web interface at `/config.php` provides a user-friendly setup experience
+
+## Testing
+
+Test your email configuration:
+```bash
+./fr24_manager.sh test-email
+```
+
+This will send a simulated reboot alert to verify your settings work correctly.
+EOF
+
+    if [[ -f "$SCRIPT_DIR/.gitignore" ]]; then
+        print_status "SUCCESS" "Created .gitignore file"
+    fi
+    
+    if [[ -f "$SCRIPT_DIR/email_config.template.json" ]]; then
+        print_status "SUCCESS" "Created email configuration template"
+    fi
+    
+    if [[ -f "$SCRIPT_DIR/EMAIL_SETUP.md" ]]; then
+        print_status "SUCCESS" "Created email setup documentation"
+    fi
+    
+    # Check if this is a git repository and give advice
+    if [[ -d "$SCRIPT_DIR/.git" ]]; then
+        print_status "INFO" "Git repository detected"
+        print_status "INFO" "To ensure sensitive data is not committed:"
+        print_status "INFO" "1. Copy email template: cp email_config.template.json email_config.json"
+        print_status "INFO" "2. Configure via web interface: http://localhost:$WEB_PORT/config.php"
+        print_status "INFO" "3. The .gitignore file will prevent sensitive files from being committed"
+    else
+        print_status "INFO" "To initialize git repository:"
+        print_status "INFO" "  git init"
+        print_status "INFO" "  git add ."
+        print_status "INFO" "  git commit -m 'Initial FR24 Monitor setup'"
+    fi
+}
+
 # Main function
 main() {
     local action="${1:-help}"
@@ -1924,7 +2353,9 @@ main() {
             install_database
             install_webserver
             create_web_dashboard
+            install_systemd_service
             start_webserver
+            create_git_templates
             ;;
         "uninstall")
             uninstall_cron
@@ -1954,6 +2385,12 @@ main() {
             sleep 2
             start_webserver
             ;;
+        "service-status")
+            show_systemd_service_status
+            ;;
+        "test-email")
+            test_email_alert
+            ;;
         "help"|*)
             local log_file=$(get_log_file_path)
             cat << EOF
@@ -1967,28 +2404,30 @@ DESCRIPTION:
     and web dashboard for all components.
 
 COMMANDS:
-    install     Install FR24 monitor with cron, logrotate, database, and web dashboard
-    uninstall   Remove FR24 monitor and all components (cron, logrotate, web, database)
-    status      Show current system status, cron jobs, logs, and web server status
-    edit        Edit crontab manually
-    test        Test the monitor script in dry-run mode
-    preview     Show the cron and logrotate entries that would be installed
-    start-web   Start the web dashboard server
-    stop-web    Stop the web dashboard server
-    restart-web Restart the web dashboard server
-    test        Test the monitor script in dry-run mode
-    preview     Show the cron and logrotate entries that would be installed
-    help        Show this help message
+    install       Install FR24 monitor with cron, logrotate, database, web dashboard, and systemd service
+    uninstall     Remove FR24 monitor and all components (cron, logrotate, web, database, systemd service)
+    status        Show current system status, cron jobs, logs, and web server status
+    edit          Edit crontab manually
+    test          Test the monitor script in dry-run mode
+    test-email    Send a test reboot alert email to verify email configuration
+    preview       Show the cron and logrotate entries that would be installed
+    start-web     Start the web dashboard server
+    stop-web      Stop the web dashboard server
+    restart-web   Restart the web dashboard server
+    service-status Show systemd service status and auto-start configuration
+    help          Show this help message
 
 EXAMPLES:
-    $0 preview      # Preview what will be installed
-    $0 install      # Install complete monitoring system with web dashboard
-    $0 status       # Check if monitoring is running
-    $0 test         # Test the monitoring script safely
-    $0 start-web    # Start the web dashboard server
-    $0 stop-web     # Stop the web dashboard server
-    $0 restart-web  # Restart the web dashboard server
-    $0 uninstall    # Remove complete monitoring system
+    $0 preview          # Preview what will be installed
+    $0 install          # Install complete monitoring system with web dashboard and auto-start
+    $0 status           # Check if monitoring is running
+    $0 test             # Test the monitoring script safely
+    $0 test-email       # Send a test reboot alert email
+    $0 start-web        # Start the web dashboard server
+    $0 stop-web         # Stop the web dashboard server
+    $0 restart-web      # Restart the web dashboard server
+    $0 service-status   # Check systemd service status and auto-start configuration
+    $0 uninstall        # Remove complete monitoring system
 
 FILES:
     Monitor script: $MONITOR_SCRIPT

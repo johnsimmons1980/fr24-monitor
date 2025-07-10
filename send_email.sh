@@ -206,18 +206,40 @@ EOF
     
     # Send email using msmtp
     log_message "INFO" "Executing msmtp command..."
-    if echo "$email_content" | msmtp "$recipient" 2>&1; then
+    
+    # Create a temporary file for the email content to debug if needed
+    local temp_email_file=$(mktemp)
+    echo "$email_content" > "$temp_email_file"
+    
+    # Set up a timeout for the msmtp command (30 seconds)
+    local msmtp_output
+    local msmtp_exit_code
+    
+    if msmtp_output=$(timeout 30 msmtp "$recipient" < "$temp_email_file" 2>&1); then
         log_message "SUCCESS" "Email sent successfully to $recipient"
+        log_message "INFO" "msmtp output: $msmtp_output"
+        rm -f "$temp_email_file"
         return 0
     else
-        local msmtp_exit_code=$?
+        msmtp_exit_code=$?
         log_message "ERROR" "Failed to send email to $recipient (exit code: $msmtp_exit_code)"
+        
+        if [[ $msmtp_exit_code -eq 124 ]]; then
+            log_message "ERROR" "Email sending timed out after 30 seconds"
+        fi
+        
+        if [[ -n "$msmtp_output" ]]; then
+            log_message "ERROR" "msmtp output: $msmtp_output"
+        fi
         
         # Check msmtp log for more details
         if [[ -f "/tmp/msmtp.log" ]]; then
             log_message "ERROR" "msmtp log contents:"
-            cat "/tmp/msmtp.log" >&2
+            tail -20 "/tmp/msmtp.log" >&2
         fi
+        
+        # Keep temp file for debugging on failure
+        log_message "ERROR" "Email content saved for debugging: $temp_email_file"
         
         return 1
     fi

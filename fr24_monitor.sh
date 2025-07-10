@@ -386,10 +386,37 @@ This is a test of the email alert system. In a real scenario, the system would b
         local email_message=$(create_reboot_email_message "$reason" "$tracked" "$TRACKED_THRESHOLD" "$uptime_hours" "$endpoint")
         
         log_message "INFO" "Sending reboot alert email..."
-        if send_email_alert "$email_subject" "$email_message"; then
-            log_message "INFO" "Email alert sent successfully"
-        else
-            log_message "WARN" "Failed to send email alert, but continuing with reboot"
+        local email_sent=false
+        local email_attempts=0
+        local max_email_attempts=3
+        
+        # Try to send email with retries
+        while [[ "$email_attempts" -lt "$max_email_attempts" ]] && [[ "$email_sent" == "false" ]]; do
+            email_attempts=$((email_attempts + 1))
+            log_message "INFO" "Email attempt $email_attempts of $max_email_attempts..."
+            
+            if send_email_alert "$email_subject" "$email_message"; then
+                log_message "SUCCESS" "Email alert sent successfully on attempt $email_attempts"
+                email_sent=true
+                
+                # Wait additional time to ensure email is fully processed
+                log_message "INFO" "Waiting 10 seconds to ensure email delivery completes..."
+                sleep 10
+            else
+                log_message "WARN" "Email attempt $email_attempts failed"
+                if [[ "$email_attempts" -lt "$max_email_attempts" ]]; then
+                    log_message "INFO" "Retrying email in 5 seconds..."
+                    sleep 5
+                fi
+            fi
+        done
+        
+        if [[ "$email_sent" == "false" ]]; then
+            log_message "ERROR" "Failed to send email alert after $max_email_attempts attempts"
+            log_message "WARN" "Consider checking email configuration before proceeding with reboot"
+            
+            # Still proceed with reboot, but log the failure prominently
+            log_message "REBOOT" "Proceeding with reboot despite email failure - manual notification may be required"
         fi
     fi
     
@@ -399,8 +426,12 @@ This is a test of the email alert system. In a real scenario, the system would b
         return 1
     fi
     
-    # Give a short delay for logging and email to complete
-    sleep 3
+    # Final delay for any remaining processes to complete
+    log_message "INFO" "Final system preparation before reboot..."
+    sleep 5
+    
+    # Log the actual reboot command being executed
+    log_message "REBOOT" "Executing: sudo reboot"
     sudo reboot
 }
 

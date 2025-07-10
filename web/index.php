@@ -2,6 +2,31 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+$message = '';
+
+// Handle delete request
+if ($_POST['action'] ?? '' === 'delete' && !empty($_POST['timestamp'])) {
+    $dbFile = dirname(__DIR__) . '/fr24_monitor.db';
+    
+    if (file_exists($dbFile)) {
+        try {
+            $pdo = new PDO('sqlite:' . $dbFile);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            $stmt = $pdo->prepare("DELETE FROM reboot_events WHERE timestamp = ?");
+            $deleted = $stmt->execute([$_POST['timestamp']]);
+            
+            if ($deleted && $stmt->rowCount() > 0) {
+                $message = '<div class="alert alert-success">✅ Reboot entry deleted successfully!</div>';
+            } else {
+                $message = '<div class="alert alert-warning">⚠️ No matching entry found to delete.</div>';
+            }
+        } catch (PDOException $e) {
+            $message = '<div class="alert alert-error">❌ Error deleting entry: ' . htmlspecialchars($e->getMessage()) . '</div>';
+        }
+    }
+}
+
 // Set timezone to match system timezone
 $systemTimezone = trim(shell_exec('timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC"'));
 if ($systemTimezone && $systemTimezone !== 'UTC' && $systemTimezone !== '') {
@@ -86,6 +111,10 @@ $monitoringTrend = $pdo->query("
 </head>
 <body>
     <div class="container">
+        <?php if ($message): ?>
+            <?= $message ?>
+        <?php endif; ?>
+        
         <div class="header">
             <h1>🛩️ FR24 Monitor Dashboard</h1>
             <p>Real-time monitoring and analytics for FlightRadar24 feeder status</p>
@@ -201,6 +230,7 @@ $monitoringTrend = $pdo->query("
                             <th>Uptime (hrs)</th>
                             <th>Type</th>
                             <th>Reason</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -218,6 +248,13 @@ $monitoringTrend = $pdo->query("
                                     <?php endif; ?>
                                 </td>
                                 <td class="reason-cell"><?= htmlspecialchars($reboot['reason']) ?></td>
+                                <td>
+                                    <form method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this reboot entry?');">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="timestamp" value="<?= htmlspecialchars($reboot['timestamp']) ?>">
+                                        <button type="submit" class="delete-btn" title="Delete this entry">🗑️</button>
+                                    </form>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -227,7 +264,10 @@ $monitoringTrend = $pdo->query("
 
         <div class="refresh-info">
             <p>🔄 Page automatically refreshes every 60 seconds | Last updated: <?= date('d/m/Y H:i:s T') ?></p>
-            <p><a href="logs.php" class="btn">View Detailed Logs</a></p>
+            <p>
+                <a href="logs.php" class="btn">View Detailed Logs</a>
+                <a href="config.php" class="btn">Email Config</a>
+            </p>
             <!-- Debug: Timezone info -->
             <p style="font-size: 0.8rem; color: #999; margin-top: 10px;">
                 Debug: PHP Timezone: <?= date_default_timezone_get() ?> | 
