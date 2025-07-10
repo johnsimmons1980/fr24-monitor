@@ -1957,7 +1957,7 @@ send_email_alert() {
     fi
     
     # Parse configuration
-    local enabled=$(jq -r '.enabled // false' "$CONFIG_FILE")
+    local enabled=$(jq -r '.email.enabled // false' "$CONFIG_FILE")
     if [[ "$enabled" != "true" ]]; then
         echo "Email alerts are disabled"
         return 0
